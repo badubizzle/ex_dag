@@ -31,23 +31,42 @@ defmodule ExDag.DAG.Server do
     end
   end
 
-  def stop_dag(dag_id) do
-    case Registry.lookup(@registry, dag_id) do
-      [{pid, _}] ->
-        GenServer.stop(pid)
+  def get_dag_id(dag_id) do
+    Swarm.whereis_name({:dag, dag_id})
+  end
 
-      _ ->
-        :error
+  def stop_dag(dag_id) do
+
+    case Swarm.whereis_name({:dag, dag_id}) do
+      pid when is_pid(pid) ->
+        GenServer.stop(pid)
     end
+    # case Registry.lookup(@registry, dag_id) do
+    #   [{pid, _}] ->
+    #     GenServer.stop(pid)
+
+    #   _ ->
+    #     :error
+    # end
   end
 
   # server
   def start_link(%{dag_id: dag_id} = args) when is_binary(dag_id) do
-    GenServer.start_link(@server, args, name: {:via, Registry, {@registry, dag_id}})
+    # name = dag_id
+    #  = Swarm.register_name(name, __MODULE__, :register, [name])
+
+    # {:ok, pid}
+    {:ok, pid} = GenServer.start_link(@server, args, name: {:via, :swarm, {:dag, dag_id}})
+    Swarm.join(:dags, pid)
+    {:ok, pid}
   end
 
   def start_link(%DAG{dag_id: dag_id} = args) when is_binary(dag_id) do
-    GenServer.start_link(@server, args, name: {:via, Registry, {@registry, dag_id}})
+    {:ok, pid} = GenServer.start_link(@server, args, name: {:via, :swarm, {@registry, dag_id}})
+    # name = dag_id
+    # {:ok, pid} = Swarm.register_name(name, __MODULE__, :register, [name])
+    Swarm.join(:dags, pid)
+    {:ok, pid}
   end
 
   @impl true
@@ -138,6 +157,7 @@ defmodule ExDag.DAG.Server do
             Logger.debug("Completed DAG run")
             dag = %DAG{dag | status: :done, timer: nil}
             # run_on_task_completed(dag, nil, nil)
+            run_on_dag_completed(dag)
             {:stop, :normal, dag}
 
           true ->
@@ -161,8 +181,13 @@ defmodule ExDag.DAG.Server do
       end
 
     run_on_task_completed(dag, task, reason)
-
+    Phoenix.PubSub.broadcast(ExDag.PubSub, dag.dag_id, {:completed, dag, task, reason})
     {:noreply, %DAG{new_state | timer: timer}}
+  end
+
+   def handle_info({:swarm, :die}, state) do
+    IO.inspect(state, label: "swarm die")
+    {:stop, :shutdown, state}
   end
 
   # private functions
@@ -216,6 +241,31 @@ defmodule ExDag.DAG.Server do
     }
   end
 
+  defp run_on_dag_completed(%DAG{}=dag) do
+    Logger.debug("Calling dag completed callback #{inspect(dag.on_dag_completed)}")
+
+    case dag.on_dag_completed do
+      {m, f, _a} ->
+        spawn(fn ->
+          apply(m, f, [dag])
+        end)
+
+      {m, f} ->
+        spawn(fn ->
+          apply(m, f, [dag])
+        end)
+
+      f when is_function(f, 1) ->
+        spawn(fn ->
+          f.(dag)
+        end)
+
+      _ ->
+        Logger.debug(fn -> "No dag completed callback found" end)
+        :ok
+    end
+
+  end
   defp run_on_task_completed(dag, task, result) do
     Logger.debug(fn ->
       "Calling task completed callback #{task.id}"
@@ -238,7 +288,7 @@ defmodule ExDag.DAG.Server do
         end)
 
       _ ->
-        Logger.debug(fn -> "No completed callback found" end)
+        Logger.debug(fn -> "No task completed callback found" end)
         :ok
     end
   end

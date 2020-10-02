@@ -18,15 +18,18 @@ defmodule ExDag.DAG do
             tasks: nil,
             task_runs: nil,
             task_deps: nil,
-            on_task_completed: nil
+            on_task_completed: nil,
+            on_dag_completed: nil
 
   @doc """
   Create a new DAG dag struct
   """
   def new(dag_id) do
-    new(dag_id, {ExDag.DAG.Utils, :on_task_completed, []})
+    on_task_completed = {ExDag.DAG.Utils, :on_task_completed, []}
+    new(dag_id, on_task_completed, on_task_completed)
   end
-  def new(dag_id, on_task_completed) when is_binary(dag_id) do
+
+  def new(dag_id, on_task_completed, on_dag_completed) when is_binary(dag_id) do
     g = Graph.new(type: :directed)
     running = %{}
     failed = %{}
@@ -45,7 +48,8 @@ defmodule ExDag.DAG do
       task_runs: task_runs,
       task_deps: task_deps,
       on_task_completed: on_task_completed,
-      status: :init
+      status: :init,
+      on_dag_completed: on_dag_completed
     )
   end
 

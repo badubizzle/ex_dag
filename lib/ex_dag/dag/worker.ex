@@ -1,12 +1,14 @@
 defmodule ExDag.DAG.Worker do
+  use GenServer
+
   alias ExDag.DAG.DAGTaskRun
 
   def run_task(%DAGTaskRun{} = task) do
     GenServer.start_link(__MODULE__, task, [])
   end
 
-  def start_link(args) do
-    GenServer.start_link(__MODULE__, args, [])
+  def start_link(task) do
+    GenServer.start_link(__MODULE__, task, [])
   end
 
   def init(%DAGTaskRun{} = task) do

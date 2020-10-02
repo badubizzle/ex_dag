@@ -23,11 +23,23 @@ defmodule ExDag.DAG.DAGSupervisor do
     spec = %{
       id: {ExDag.DAG.Server, dag_id},
       start: {ExDag.DAG.Server, :start_link, [dag]},
-      restart: :permanent,
+      restart: :temporary,
       type: :worker
     }
 
     DynamicSupervisor.start_child(__MODULE__, spec)
+  end
+
+  def running_dags() do
+    case Swarm.members(:dags) do
+      pids when is_list(pids) ->
+
+        Enum.map(pids , fn pid ->
+          :sys.get_state(pid)
+        end)
+      _ ->
+        []
+    end
   end
 
   def get_running_dags() do

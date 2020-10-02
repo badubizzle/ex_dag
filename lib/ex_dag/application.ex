@@ -6,11 +6,20 @@ defmodule ExDag.Application do
   use Application
 
   def start(_type, _args) do
+
+    topologies = [
+      chat: [
+        strategy: Cluster.Strategy.Gossip
+      ]
+    ]
+
     children = [
       # Starts a worker by calling: ExDag.Worker.start_link(arg)
-      # {ExDag.Worker, arg}
-      ExDag.DAG.DAGSupervisor,
-      {Registry, [keys: :unique, name: DAGRegister]}
+      {Phoenix.PubSub, name: ExDag.PubSub},
+      {Cluster.Supervisor, [topologies, [name: ExDag.ClusterSupervisor]]},
+      # {Registry, [keys: :unique, name: DAGRegister]},
+      {ExDag.Tracker, [name: ExDag.Tracker, pubsub_server: ExDag.PubSub]},
+      ExDag.DAG.DAGSupervisor
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
