@@ -1,6 +1,8 @@
 defmodule ExDag.DAG.Worker do
   use GenServer
 
+  require Logger
+
   alias ExDag.DAG.DAGTaskRun
 
   def run_task(%DAGTaskRun{} = task) do
@@ -15,17 +17,12 @@ defmodule ExDag.DAG.Worker do
     {:ok, task, {:continue, :run_task}}
   end
 
-  def handle_continue(:run_task, %DAGTaskRun{callback: callback} = state) when callback != nil do
-    result =
-      case callback do
-        {m, f} ->
-          apply(m, f, [state.task, state.payload])
-
-        {m, f, _a} ->
-          apply(m, f, [state.task, state.payload])
-
-        f when is_function(f, 2) ->
-          f.(state.task, state.payload)
+  def handle_continue(:run_task, %DAGTaskRun{handler: handler} = state) when handler != nil do
+      result = if function_exported?(handler, :run_task, 2) do
+          apply(handler, :run_task, [state.task, state.payload])
+      else
+        Logger.error("Invalid handler module: #{handler}. Task handler module must implement run_task/2")
+        raise "Invalid task handler"
       end
 
     send(state.collector_pid, {:collect, self(), result})

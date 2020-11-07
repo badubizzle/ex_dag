@@ -17,7 +17,6 @@ defmodule ExDag.Application do
       # Starts a worker by calling: ExDag.Worker.start_link(arg)
       {Phoenix.PubSub, name: ExDag.PubSub},
       {Cluster.Supervisor, [topologies, [name: ExDag.ClusterSupervisor]]},
-      # {Registry, [keys: :unique, name: DAGRegister]},
       {ExDag.Tracker, [name: ExDag.Tracker, pubsub_server: ExDag.PubSub]},
       ExDag.DAG.DAGSupervisor
     ]

@@ -18,18 +18,34 @@ defmodule ExDag.DAG do
             tasks: nil,
             task_runs: nil,
             task_deps: nil,
-            on_task_completed: nil,
-            on_dag_completed: nil
+            handler: nil,
+            task_handler: nil
+
+  @status_running :running
+  @status_done :done
+  @status_init :init
+
+  @type t :: %__MODULE__{
+    dag_id: String.t(),
+    status: atom(),
+    g: Graph.t(),
+    completed: map(),
+    running: map(),
+    failed: map(),
+    tasks: map(),
+    task_runs: map(),
+    task_deps: map(),
+    handler: atom() | nil
+  }
 
   @doc """
   Create a new DAG dag struct
   """
   def new(dag_id) do
-    on_task_completed = {ExDag.DAG.Utils, :on_task_completed, []}
-    new(dag_id, on_task_completed, on_task_completed)
+    new(dag_id, ExDag.DAG.Utils.DAGHandler, nil)
   end
 
-  def new(dag_id, on_task_completed, on_dag_completed) when is_binary(dag_id) do
+  def new(dag_id, handler, task_handler) when is_binary(dag_id) and is_atom(handler) do
     g = Graph.new(type: :directed)
     running = %{}
     failed = %{}
@@ -47,10 +63,26 @@ defmodule ExDag.DAG do
       tasks: tasks,
       task_runs: task_runs,
       task_deps: task_deps,
-      on_task_completed: on_task_completed,
+      handler: handler,
       status: :init,
-      on_dag_completed: on_dag_completed
+      task_handler: task_handler
     )
+  end
+
+  def set_handler(%__MODULE__{}=dag, handler) when is_atom(handler) do
+    %__MODULE__{dag | handler: handler}
+  end
+
+
+  def set_default_task_handler(%__MODULE__{}=dag, handler) when is_atom(handler) do
+    %__MODULE__{dag | task_handler: handler}
+  end
+  def set_tasks_handler(%__MODULE__{}=dag, handler) when is_atom(handler) do
+    tasks = Enum.map(dag.tasks, fn {key, %DAGTask{}=t} ->
+      {key, %DAGTask{t | handler: handler}}
+    end)
+    |> Map.new()
+    %__MODULE__{dag | tasks: tasks}
   end
 
   @doc """
@@ -76,6 +108,7 @@ defmodule ExDag.DAG do
     case do_add_task(dag, task_or_opts) do
       {:ok, %__MODULE__{} = new_dag} ->
         new_dag
+
       error ->
         throw(error)
     end
@@ -85,34 +118,51 @@ defmodule ExDag.DAG do
     case add_task(dag, task_or_opts, parent_task_id) do
       {:ok, %__MODULE__{} = new_dag} ->
         new_dag
+
       error ->
         throw(error)
     end
   end
 
-  def add_task(%__MODULE__{status: @status_init} = dag, %DAGTask{} = task, parent_task_id) do
+  def add_task(%__MODULE__{status: @status_init, task_handler: default_handler} = dag, %DAGTask{handler: handler} = task, parent_task_id) do
     case get_task(dag, parent_task_id) do
       %DAGTask{} = parent_task ->
+        task = if is_nil(handler) do
+          %DAGTask{task | handler: default_handler}
+        else
+          task
+        end
         case DAGTask.validate(task) do
           true ->
             case do_add_task(dag, task) do
               {:ok, dag} ->
-                  {:ok, add_dependency(dag, parent_task.id, task.id)}
+                {:ok, add_dependency(dag, parent_task.id, task.id)}
+
               error ->
                 error
             end
+
           any ->
             IO.inspect([any])
             {:error, :invalid_task}
         end
+
       _ ->
         {:error, :no_parent_task}
     end
   end
 
-  defp do_add_task(%__MODULE__{status: @status_init} = dag, opts) when is_list(opts) do
-
+  defp do_add_task(%__MODULE__{status: @status_init, task_handler: task_handler} = dag, opts) when is_list(opts) do
     parent = Keyword.get(opts, :parent, nil)
+
+    opts = case Keyword.get(opts, :handler, nil) do
+      nil ->
+        Keyword.merge(opts, handler: task_handler)
+      _handler ->
+
+        opts
+    end
+
     if is_nil(parent) do
       task = DAGTask.new(opts)
       do_add_task(dag, task)
@@ -123,7 +173,14 @@ defmodule ExDag.DAG do
     end
   end
 
-  defp do_add_task(%__MODULE__{}=dag, %DAGTask{}=task) do
+  defp do_add_task(%__MODULE__{task_handler: default_handler} = dag, %DAGTask{handler: handler} = task) do
+
+    task = if is_nil(handler) do
+      %DAGTask{task | handler: default_handler}
+    else
+      task
+    end
+
     case DAGTask.validate(task) do
       true ->
         case Map.has_key?(dag.tasks, task.id) do
@@ -131,14 +188,15 @@ defmodule ExDag.DAG do
             tasks = Map.put(dag.tasks, task.id, task)
             dag = %__MODULE__{dag | tasks: tasks}
             {:ok, update_graph(dag, Graph.add_vertex(dag.g, task.id, {:info, task}))}
+
           _ ->
             {:error, :task_exists}
         end
+
       _ ->
         {:error, :invalid_task}
     end
   end
-
 
   def add_dependency(%__MODULE__{status: @status_init} = dag, %DAGTask{id: task1_id}, %DAGTask{
         id: task2_id
@@ -155,6 +213,7 @@ defmodule ExDag.DAG do
         dag.g
         |> Graph.add_edge(edge)
         |> Graph.label_vertex(task1_id, {:deps, task2_id})
+
       dag = update_graph(dag, updated_g)
       %__MODULE__{dag | task_deps: build_task_deps(dag)}
     else
@@ -185,6 +244,18 @@ defmodule ExDag.DAG do
       {task_id, Enum.map(deps, & &1.v2)}
     end)
     |> Map.new()
+  end
+
+  def status_running() do
+    @status_running
+  end
+
+  def status_done() do
+    @status_done
+  end
+
+  def status_init() do
+    @status_init
   end
 
   defimpl String.Chars, for: __MODULE__ do

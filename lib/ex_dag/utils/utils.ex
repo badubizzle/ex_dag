@@ -6,13 +6,17 @@ defmodule ExDag.DAG.Utils do
 
   require Logger
 
-  def on_task_completed(dag, _task, _result) do
-    print_status(dag)
-    print_task_runs(dag.task_runs)
+  def on_task_completed(dag_run, _task, _result) do
+    print_status(dag_run.dag)
+    print_task_runs(dag_run.dag.task_runs)
   end
 
-  defp print_status(%DAG{} = dag) do
+  def on_dag_completed(dag_run) do
+    print_status(dag_run.dag)
+    print_task_runs(dag_run.dag.task_runs)
+  end
 
+  def print_status(%DAG{} = dag) do
     header = [
       "Task ID",
       "Status",
@@ -77,8 +81,7 @@ defmodule ExDag.DAG.Utils do
     end
   end
 
-  defp print_task_runs(task_runs) do
-
+  def print_task_runs(task_runs) do
     header = [
       "Task ID",
       "Status",
@@ -133,40 +136,23 @@ defmodule ExDag.DAG.Utils do
   end
 
   def build_dag(dag_id) do
-    callback = fn task, payload ->
-      wait = Enum.random(1000..2000)
-      Process.sleep(wait)
-
-      if rem(wait, 5) == 0 do
-        Process.exit(self(), :kill)
-      else
-        case task.data do
-          {:value, v} ->
-            {:ok, v}
-
-          {:op, :+} ->
-            {:ok, Enum.reduce(payload, 0, fn {_k, v}, acc -> acc + v end)}
-
-          _ ->
-            IO.puts("Unhandled")
-        end
-      end
-    end
 
     start_date = DateTime.utc_now() |> DateTime.add(5, :second)
 
+    handler = ExDag.DAG.Utils.TaskHandler
+
     dag =
       DAG.new(dag_id)
-      |> DAG.add_task!(id: :a, callback: callback, data: {:op, :+})
-      |> DAG.add_task!(id: :b, callback: callback, data: {:value, 2}, parent: :a)
-      |> DAG.add_task!(id: :c, callback: callback, data: {:op, :+}, parent: :a)
-      |> DAG.add_task!(id: :d, callback: callback, data: {:op, :+}, parent: :c)
-      |> DAG.add_task!(id: :e, callback: callback, data: {:op, :+}, parent: :c)
-      |> DAG.add_task!(id: :f, callback: callback, data: {:value, 6}, parent: :d)
-      |> DAG.add_task!(id: :g, callback: callback, data: {:value, 5}, start_date: start_date, parent: :d)
-      |> DAG.add_task!(id: :h, callback: callback, data: {:value, 4}, parent: :e)
-      |> DAG.add_task!(id: :i, callback: callback, data: {:value, 3}, parent: :e)
-
+      |> DAG.set_default_task_handler(handler)
+      |> DAG.add_task!(id: :a, data: {:op, :+})
+      |> DAG.add_task!(id: :b, data: {:value, 2}, parent: :a)
+      |> DAG.add_task!(id: :c, data: {:op, :+}, parent: :a)
+      |> DAG.add_task!(id: :d, data: {:op, :+}, parent: :c)
+      |> DAG.add_task!(id: :e, data: {:op, :+}, parent: :c)
+      |> DAG.add_task!(id: :f, data: {:value, 6}, parent: :d)
+      |> DAG.add_task!(id: :g, data: {:value, 5}, start_date: start_date, parent: :d)
+      |> DAG.add_task!(id: :h, data: {:value, 4}, parent: :e)
+      |> DAG.add_task!(id: :i, data: {:value, 3}, parent: :e)
     dag
   end
 end

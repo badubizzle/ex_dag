@@ -35,10 +35,19 @@ defmodule ExDag.DAG.DAGSupervisor do
       pids when is_list(pids) ->
 
         Enum.map(pids , fn pid ->
-          :sys.get_state(pid)
+            if Process.alive?(pid) do
+              try do
+                :sys.get_state(pid)
+              rescue
+                _ ->
+                  nil
+              end
+            else
+              nil
+            end
+
         end)
-      _ ->
-        []
+        |> Enum.filter(&(!is_nil(&1)))
     end
   end
 
