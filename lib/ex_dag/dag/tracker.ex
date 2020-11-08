@@ -1,4 +1,8 @@
 defmodule ExDag.Tracker do
+  @moduledoc """
+  Module for handling tracking DAGS.
+  It uses the phoenix pubsub
+  """
   use Phoenix.Tracker
 
   def start_link(opts) do
@@ -23,16 +27,18 @@ defmodule ExDag.Tracker do
   def handle_diff(diff, state) do
     for {topic, {joins, leaves}} <- diff do
       for {key, meta} <- joins do
-        IO.puts "presence join: key \"#{key}\" with meta #{inspect meta}"
+        IO.puts("presence join: key \"#{key}\" with meta #{inspect(meta)}")
         msg = {:join, key, meta}
         Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
       end
+
       for {key, meta} <- leaves do
-        IO.puts "presence leave: key \"#{key}\" with meta #{inspect meta}"
+        IO.puts("presence leave: key \"#{key}\" with meta #{inspect(meta)}")
         msg = {:leave, key, meta}
         Phoenix.PubSub.direct_broadcast!(state.node_name, state.pubsub_server, topic, msg)
       end
     end
+
     {:ok, state}
   end
 end

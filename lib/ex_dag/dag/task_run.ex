@@ -1,4 +1,7 @@
 defmodule ExDag.DAG.DAGTaskRun do
+  @moduledoc """
+  Represent a running instance of a DAG task
+  """
   alias ExDag.DAG.DAGTask
 
   @enforce_keys [:task_id, :task]
@@ -14,19 +17,19 @@ defmodule ExDag.DAG.DAGTaskRun do
             collector_pid: nil
 
   @type t :: %__MODULE__{
-    task: ExDag.DAG.DAGTask.t(),
-    task_id: String.t(),
-    handler: atom(),
-    payload: map(),
-    result: any(),
-    error: any(),
-    status: atom(),
-    started_at: DateTime.t(),
-    ended_at: DateTime.t(),
-    collector_pid: pid()
-  }
+          task: ExDag.DAG.DAGTask.t(),
+          task_id: String.t(),
+          handler: atom(),
+          payload: map(),
+          result: any(),
+          error: any(),
+          status: atom(),
+          started_at: DateTime.t(),
+          ended_at: DateTime.t(),
+          collector_pid: pid()
+        }
 
-  def new(%DAGTask{}=task, payload, collector_pid) do
+  def new(%DAGTask{} = task, payload, collector_pid) do
     struct!(__MODULE__,
       task: task,
       task_id: task.id,

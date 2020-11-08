@@ -1,4 +1,7 @@
 defmodule ExDag.DAG.DAGSupervisor do
+  @moduledoc """
+  Supervisor for running DAGs
+  """
   use DynamicSupervisor
 
   require Logger
@@ -16,7 +19,7 @@ defmodule ExDag.DAG.DAGSupervisor do
     DynamicSupervisor.init(strategy: :one_for_one)
   end
 
-  def run_dag(%DAG{dag_id: dag_id}=dag) do
+  def run_dag(%DAG{dag_id: dag_id} = dag) do
     log = "Calling #{__MODULE__}.run_dag/1 with args: #{inspect(dag_id)}"
     Logger.log(:info, log)
 
@@ -33,28 +36,31 @@ defmodule ExDag.DAG.DAGSupervisor do
   def running_dags() do
     case Swarm.members(:dags) do
       pids when is_list(pids) ->
-
-        Enum.map(pids , fn pid ->
-            if Process.alive?(pid) do
-              try do
-                :sys.get_state(pid)
-              rescue
-                _ ->
-                  nil
-              end
-            else
-              nil
-            end
-
-        end)
+        pids
+        |> get_processes_states()
         |> Enum.filter(&(!is_nil(&1)))
     end
   end
 
   def get_running_dags() do
     DynamicSupervisor.which_children(__MODULE__)
-    |> Enum.map(fn {_, pid, _, _}->
+    |> Enum.map(fn {_, pid, _, _} ->
       :sys.get_state(pid)
+    end)
+  end
+
+  defp get_processes_states(pids) do
+    Enum.map(pids, fn pid ->
+      if Process.alive?(pid) do
+        try do
+          :sys.get_state(pid)
+        rescue
+          _ ->
+            nil
+        end
+      else
+        nil
+      end
     end)
   end
 end

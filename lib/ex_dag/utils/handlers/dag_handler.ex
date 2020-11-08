@@ -1,4 +1,8 @@
 defmodule ExDag.DAG.Utils.DAGHandler do
+  @moduledoc """
+  Sample implementation of DAG handler behaviour
+  """
+
   @behaviour ExDag.DAG.Handlers.DAGHandler
 
   @impl true
