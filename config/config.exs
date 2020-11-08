@@ -8,3 +8,13 @@ config :ex_dag, ExDag.Repo,
 
 config :ex_dag,
   ecto_repos: [ExDag.Repo]
+
+if Mix.env() == :dev do
+  config :mix_test_watch,
+    clear: true,
+    tasks: [
+      "test",
+      "format",
+      "credo explain"
+    ]
+end
