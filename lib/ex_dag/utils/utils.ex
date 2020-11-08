@@ -1,4 +1,7 @@
 defmodule ExDag.DAG.Utils do
+  @moduledoc """
+  Utility module for running and test DAGs
+  """
   alias ExDag.DAG.Server
   alias ExDag.DAG
   alias ExDag.DAG.DAGTask
@@ -16,8 +19,8 @@ defmodule ExDag.DAG.Utils do
     print_task_runs(dag_run.dag.task_runs)
   end
 
-  def print_status(%DAG{} = dag) do
-    header = [
+  defp get_task_headers() do
+    [
       "Task ID",
       "Status",
       "Depends On",
@@ -30,46 +33,53 @@ defmodule ExDag.DAG.Utils do
       "Result",
       "Payload"
     ]
+  end
+
+  def get_task_row_values(dag, {task_id, %DAGTask{last_run: nil} = task}) do
+    deps =
+      case Map.get(dag.task_deps, task_id, []) do
+        [] -> "-"
+        l -> Enum.join(l, ", ")
+      end
+
+    [task_id, :pending, deps, task.retries, task.start_date, "-", "-", "-", 0, "-", "-"]
+  end
+
+  def get_task_row_values(dag, {task_id, %DAGTask{last_run: %DAGTaskRun{} = last_run} = task}) do
+    lapse =
+      if !is_nil(last_run.ended_at) and !is_nil(last_run.started_at) do
+        DateTime.diff(last_run.ended_at, last_run.started_at)
+      else
+        "-"
+      end
+
+    deps =
+      case Map.get(dag.task_deps, task_id, []) do
+        [] -> "-"
+        l -> Enum.join(l, ", ")
+      end
+
+    [
+      task_id,
+      last_run.status,
+      deps,
+      task.retries,
+      task.start_date,
+      last_run.started_at || "-",
+      last_run.ended_at || "-",
+      lapse,
+      DAG.get_runs(dag, task_id) |> Enum.count(),
+      last_run.result || last_run.error,
+      "#{inspect(last_run.payload)}"
+    ]
+  end
+
+  def print_status(%DAG{} = dag) do
+    header = get_task_headers()
 
     rows =
-      Enum.map(dag.tasks, fn
-        {task_id, %DAGTask{last_run: nil} = task} ->
-          deps =
-            case Map.get(dag.task_deps, task_id, []) do
-              [] -> "-"
-              l -> Enum.join(l, ", ")
-            end
-
-          [task_id, :pending, deps, task.retries, task.start_date, "-", "-", "-", 0, "-", "-"]
-
-        {task_id, %DAGTask{last_run: %DAGTaskRun{} = last_run} = task} ->
-          lapse =
-            if !is_nil(last_run.ended_at) and !is_nil(last_run.started_at) do
-              DateTime.diff(last_run.ended_at, last_run.started_at)
-            else
-              "-"
-            end
-
-          deps =
-            case Map.get(dag.task_deps, task_id, []) do
-              [] -> "-"
-              l -> Enum.join(l, ", ")
-            end
-
-          [
-            task_id,
-            last_run.status,
-            deps,
-            task.retries,
-            task.start_date,
-            last_run.started_at || "-",
-            last_run.ended_at || "-",
-            lapse,
-            DAG.get_runs(dag, task_id) |> Enum.count(),
-            last_run.result || last_run.error,
-            "#{inspect(last_run.payload)}"
-          ]
-      end)
+      dag.tasks
+      |> Enum.map(fn task -> get_task_row_values(dag, task) end)
 
     if Enum.count(rows) > 0 do
       title = "Task status - #{dag.dag_id} (#{Enum.count(rows)})"
@@ -136,7 +146,6 @@ defmodule ExDag.DAG.Utils do
   end
 
   def build_dag(dag_id) do
-
     start_date = DateTime.utc_now() |> DateTime.add(5, :second)
 
     handler = ExDag.DAG.Utils.TaskHandler
@@ -153,6 +162,7 @@ defmodule ExDag.DAG.Utils do
       |> DAG.add_task!(id: :g, data: {:value, 5}, start_date: start_date, parent: :d)
       |> DAG.add_task!(id: :h, data: {:value, 4}, parent: :e)
       |> DAG.add_task!(id: :i, data: {:value, 3}, parent: :e)
+
     dag
   end
 end

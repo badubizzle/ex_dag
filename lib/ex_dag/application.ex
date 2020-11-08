@@ -6,7 +6,6 @@ defmodule ExDag.Application do
   use Application
 
   def start(_type, _args) do
-
     topologies = [
       chat: [
         strategy: Cluster.Strategy.Gossip

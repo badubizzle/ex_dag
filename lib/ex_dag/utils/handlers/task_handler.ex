@@ -1,4 +1,7 @@
 defmodule ExDag.DAG.Utils.TaskHandler do
+  @moduledoc """
+  Sample implementation of the task handler behaviour
+  """
   @behaviour ExDag.DAG.Handlers.TaskHandler
 
   @impl true

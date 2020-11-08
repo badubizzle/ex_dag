@@ -42,8 +42,11 @@ defmodule ExDag.DAG.Server do
 
   # server
   def start_link(%DAG{dag_id: dag_id} = args) when is_binary(dag_id) do
-    %DAGRun{id: dag_run_id}= dag_run = DAGRun.new(args)
-    {:ok, pid} = GenServer.start_link(@server, dag_run, name: {:via, :swarm, {:dag_run, dag_run_id}})
+    %DAGRun{id: dag_run_id} = dag_run = DAGRun.new(args)
+
+    {:ok, pid} =
+      GenServer.start_link(@server, dag_run, name: {:via, :swarm, {:dag_run, dag_run_id}})
+
     Swarm.join(:dags, pid)
     Swarm.join({:dag_runs, dag_id}, pid)
     {:ok, pid}
@@ -68,6 +71,7 @@ defmodule ExDag.DAG.Server do
   def handle_continue(:start, %DAGRun{dag: %{timer: nil, status: status}} = dag_run) do
     Logger.debug("Starting DAG run")
     dag = dag_run.dag
+
     if status == DAG.status_init() do
       case DAG.validate_for_run(dag) do
         true ->
@@ -85,7 +89,7 @@ defmodule ExDag.DAG.Server do
   end
 
   @impl true
-  def handle_info({:collect, pid, result}, %DAGRun{dag: dag}=dag_run) do
+  def handle_info({:collect, pid, result}, %DAGRun{dag: dag} = dag_run) do
     {task, final_state} =
       case result do
         {:ok, data} ->
@@ -135,7 +139,7 @@ defmodule ExDag.DAG.Server do
           Enum.count(ready) > 0 ->
             Logger.debug("Scheduling tasks: #{inspect(ready)}")
             new_state = start_workers(ready, dag)
-            {:noreply, %DAGRun{ dag_run | dag: %DAG{new_state | timer: nil}}}
+            {:noreply, %DAGRun{dag_run | dag: %DAG{new_state | timer: nil}}}
 
           Enum.count(pending) > 0 ->
             Logger.debug("Tasks pending: #{inspect(pending)}")
@@ -170,11 +174,10 @@ defmodule ExDag.DAG.Server do
 
     run_on_task_completed(dag_run, task, reason)
     Phoenix.PubSub.broadcast(ExDag.PubSub, dag.dag_id, {:completed, dag, task, reason})
-    {:noreply, %DAGRun{dag_run | dag:  %DAG{new_state | timer: timer}}}
+    {:noreply, %DAGRun{dag_run | dag: %DAG{new_state | timer: timer}}}
   end
 
   def handle_info({:swarm, :die}, state) do
-    IO.inspect(state, label: "swarm die")
     {:stop, :shutdown, state}
   end
 
@@ -225,7 +228,7 @@ defmodule ExDag.DAG.Server do
       failed: failed,
       ready: tasks_to_run,
       pending: not_ready_to_run,
-      completed: Enum.count(tasks) == 0
+      completed: Enum.empty?(tasks)
     }
   end
 
@@ -239,10 +242,11 @@ defmodule ExDag.DAG.Server do
     end
   end
 
-  defp run_on_task_completed(%DAGRun{dag: %DAG{handler: handler}}=dag_run, task, result) do
+  defp run_on_task_completed(%DAGRun{dag: %DAG{handler: handler}} = dag_run, task, result) do
     Logger.debug(fn ->
       "Calling task completed callback #{task.id}"
     end)
+
     if function_exported?(handler, :on_task_completed, 3) do
       apply(handler, :on_task_completed, [dag_run, task, result])
     else
