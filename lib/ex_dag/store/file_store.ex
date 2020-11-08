@@ -51,11 +51,11 @@ defmodule ExDag.Store.FileStore do
     dags_path = get_dags_path(options)
     runs_path = Path.join([dags_path, "runs", dag.dag_id])
 
-    if File.dir?(runs_path) do
-      File.ls!(dags_path)
+    if File.exists?(runs_path) and File.dir?(runs_path) do
+      File.ls!(runs_path)
       |> Enum.map(fn path ->
         dag_run =
-          File.read!(Path.join([dags_path, path]))
+          File.read!(Path.join([runs_path, path]))
           |> :erlang.binary_to_term()
 
         {dag_run.id, dag_run}
