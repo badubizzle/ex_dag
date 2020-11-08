@@ -23,7 +23,7 @@ defmodule ExDagTest do
 
   test "add invalid dag task should give error" do
     dag = DAG.new("my dag")
-    task = DAGTask.new(id: :a,  data: {:op, :+})
+    task = DAGTask.new(id: :a, data: {:op, :+})
     assert {:error, :invalid_task} = DAG.add_task(dag, task)
 
     task = DAGTask.new(id: nil, data: {:op, :+})
@@ -35,8 +35,10 @@ defmodule ExDagTest do
       {:ok, :done}
     end
 
-    dag = DAG.new("my dag")
-    |> DAG.set_default_task_handler(__MODULE__)
+    dag =
+      DAG.new("my dag")
+      |> DAG.set_default_task_handler(__MODULE__)
+
     a = DAGTask.new(id: :a, data: {:op, :+})
     b = DAGTask.new(id: :b, data: {:op, :+})
     c = DAGTask.new(id: :a, data: {:op, :+})
@@ -46,9 +48,10 @@ defmodule ExDagTest do
   end
 
   test "invalid dag should result error" do
+    dag =
+      DAG.new("my dag")
+      |> DAG.set_default_task_handler(__MODULE__)
 
-    dag = DAG.new("my dag")
-    |> DAG.set_default_task_handler(__MODULE__)
     a = DAGTask.new(id: :a, data: {:op, :+})
     b = DAGTask.new(id: :b, data: {:op, :+})
     {:ok, dag} = DAG.add_task(dag, a)
@@ -58,9 +61,10 @@ defmodule ExDagTest do
   end
 
   test "add dag task with parent task" do
+    dag =
+      DAG.new("my dag")
+      |> DAG.set_default_task_handler(__MODULE__)
 
-    dag = DAG.new("my dag")
-    |> DAG.set_default_task_handler(__MODULE__)
     a = DAGTask.new(id: :a, data: {:op, :+})
     b = DAGTask.new(id: :b, data: {:op, :+})
     {:ok, dag} = DAG.add_task(dag, a)
@@ -71,9 +75,10 @@ defmodule ExDagTest do
   end
 
   test "add dag task with no existing parent task should return error" do
+    dag =
+      DAG.new("my dag")
+      |> DAG.set_default_task_handler(__MODULE__)
 
-    dag = DAG.new("my dag")
-    |> DAG.set_default_task_handler(__MODULE__)
     a = DAGTask.new(id: :a, data: {:op, :+})
     assert {:error, :no_parent_task} = DAG.add_task(dag, a, :c)
   end
