@@ -150,18 +150,14 @@ defmodule ExDag.DAG.Utils do
 
     handler = ExDag.DAG.Utils.TaskHandler
 
-    dag = DAG.new(dag_id)
-
+    dag =
+      DAG.new(dag_id)
       |> DAG.set_default_task_handler(handler)
       |> DAG.set_handler(__MODULE__)
-
-
       |> DAG.add_task!(id: :a, data: {:op, :+})
       |> DAG.add_task!(id: :b, data: {:value, 2}, parent: :a)
       |> DAG.add_task!(id: :c, data: {:op, :+}, parent: :a)
       |> DAG.add_task!(id: :d, data: {:op, :+}, parent: :c)
-
-
       |> DAG.add_task!(id: :e, data: {:op, :+}, parent: :c)
       |> DAG.add_task!(id: :f, data: {:value, 6}, parent: :d)
       |> DAG.add_task!(id: :g, data: {:value, 5}, start_date: start_date, parent: :d)
