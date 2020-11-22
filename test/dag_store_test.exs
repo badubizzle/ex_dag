@@ -44,4 +44,19 @@ defmodule ExDagStoreTest do
     dag_runs = ExDag.Store.get_dag_runs(dag)
     assert Enum.count(dag_runs) == 1
   end
+
+  test "delete dag" do
+    dag_id = "dag1"
+    dag = DAG.new(dag_id)
+
+    dag_run = DAGRun.new(dag)
+
+    :ok = ExDag.Store.save_dag(dag)
+    dags = ExDag.Store.get_dags()
+    assert Enum.count(dags) == 1
+
+    :ok = ExDag.Store.delete_dag(dag)
+    dags = ExDag.Store.get_dags()
+    assert Enum.count(dags) == 0
+  end
 end
