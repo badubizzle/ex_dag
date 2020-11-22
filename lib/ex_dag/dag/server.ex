@@ -29,6 +29,16 @@ defmodule ExDag.DAG.Server do
     end
   end
 
+  def resume_dag(%DAGRun{dag: dag} = dag_run) do
+    case DAG.validate_for_run(dag) do
+      true ->
+        start_link(dag)
+
+      _ ->
+        :invalid_dag
+    end
+  end
+
   def get_dag_run_id(dag_run_id) do
     Swarm.whereis_name({:dag_run, dag_run_id})
   end
@@ -46,6 +56,15 @@ defmodule ExDag.DAG.Server do
 
     {:ok, pid} =
       GenServer.start_link(@server, dag_run, name: {:via, :swarm, {:dag_run, dag_run_id}})
+
+    Swarm.join(:dags, pid)
+    Swarm.join({:dag_runs, dag_id}, pid)
+    {:ok, pid}
+  end
+
+  def start_link(%DAGRun{dag: %{dag_id: dag_id}} = dag_run) when is_binary(dag_id) do
+    {:ok, pid} =
+      GenServer.start_link(@server, dag_run, name: {:via, :swarm, {:dag_run, dag_run.id}})
 
     Swarm.join(:dags, pid)
     Swarm.join({:dag_runs, dag_id}, pid)
@@ -119,8 +138,8 @@ defmodule ExDag.DAG.Server do
           {task, {:noreply, %DAGRun{dag_run | dag: %DAG{new_state | timer: timer}}}}
       end
 
-    {:noreply, new_state} = final_state
-    run_on_task_completed(new_state, task, result)
+    {:noreply, new_run_state} = final_state
+    run_on_task_completed(new_run_state, task, result)
     final_state
   end
 
@@ -244,7 +263,7 @@ defmodule ExDag.DAG.Server do
 
   defp run_on_task_completed(%DAGRun{dag: %DAG{handler: handler}} = dag_run, task, result) do
     Logger.debug(fn ->
-      "Calling task completed callback #{task.id}"
+      "Calling task completed callback #{task.id}  #{inspect(handler)}"
     end)
 
     if function_exported?(handler, :on_task_completed, 3) do
@@ -313,8 +332,8 @@ defmodule ExDag.DAG.Server do
     {task, %DAG{dag | g: g, task_runs: task_runs, running: running, tasks: tasks}}
   end
 
-  defp start_workers([], %DAG{} = dag_run) do
-    dag_run
+  defp start_workers([], %DAG{} = dag) do
+    dag
   end
 
   defp start_workers([t | rest], %DAG{} = dag) do

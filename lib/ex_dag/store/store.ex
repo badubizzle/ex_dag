@@ -8,12 +8,18 @@ defmodule ExDag.Store.Adapter do
   @callback save_dag_run(options :: Keyword.t(), dag_run :: ExDag.DAGRun.t()) ::
               :ok | {:error, atom()}
   @callback get_dags(Keyword.t()) :: map()
+
+  @callback delete_dag(options :: Keyword.t(), dag :: ExDag.DAG.t()) :: :ok | {:error, term}
+
+  @callback get_dag_runs(options :: Keyword.t(), dag :: ExDag.DAG.t()) :: map()
 end
 
 defmodule ExDag.Store do
   @moduledoc """
   Store Module
   """
+  require Logger
+
   @spec get_adapter :: atom()
   def get_adapter() do
     Application.get_env(:ex_dag, :store_adapter, ExDag.Store.FileStore)
@@ -44,7 +50,12 @@ defmodule ExDag.Store do
     call(:save_dag, dag)
   end
 
+  def delete_dag(%ExDag.DAG{} = dag) do
+    call(:delete_dag, dag)
+  end
+
   def save_dag_run(dag_run) do
+    Logger.debug("Saving dag run")
     call(:save_dag_run, dag_run)
   end
 

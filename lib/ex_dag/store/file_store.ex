@@ -36,6 +36,9 @@ defmodule ExDag.Store.FileStore do
     case File.dir?(dags_path) do
       true ->
         File.ls!(dags_path)
+        |> Enum.filter(fn path ->
+          !File.dir?(Path.join([dags_path, path]))
+        end)
         |> Enum.map(fn path ->
           dag =
             File.read!(Path.join([dags_path, path]))
@@ -47,6 +50,7 @@ defmodule ExDag.Store.FileStore do
     end
   end
 
+  @impl true
   def get_dag_runs(options, dag) do
     dags_path = get_dags_path(options)
     runs_path = Path.join([dags_path, "runs", dag.dag_id])
@@ -64,6 +68,15 @@ defmodule ExDag.Store.FileStore do
     else
       %{}
     end
+  end
+
+  @impl true
+  def delete_dag(options, dag) do
+    {:ok, dag_file} = get_dag_path(options, dag)
+
+    runs_path = Path.join([get_dags_path(options), "runs", dag.dag_id])
+    File.rm_rf(runs_path)
+    File.rm!(dag_file)
   end
 
   defp get_dags_path(options) do
