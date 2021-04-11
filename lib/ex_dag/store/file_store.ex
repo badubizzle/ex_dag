@@ -3,6 +3,7 @@ defmodule ExDag.Store.FileStore do
   DAGs store implementation using file system.
   """
   @behaviour ExDag.Store.Adapter
+  alias ExDag.DAG
 
   @impl true
   def init(options) do
@@ -58,7 +59,8 @@ defmodule ExDag.Store.FileStore do
   end
 
   @impl true
-  def get_dag_runs(options, dag) do
+  @spec get_dag_runs(options :: Keyword.t(), dag :: DAG.t()) :: map()
+  def get_dag_runs(options, %DAG{} = dag) do
     dags_path = get_dags_path(options)
     runs_path = Path.join([dags_path, "runs", dag.dag_id])
 
@@ -78,6 +80,7 @@ defmodule ExDag.Store.FileStore do
   end
 
   @impl true
+  @spec delete_dag(options :: Keyword.t(), dag :: DAG.t()) :: :ok
   def delete_dag(options, dag) do
     {:ok, dag_file} = get_dag_path(options, dag)
 

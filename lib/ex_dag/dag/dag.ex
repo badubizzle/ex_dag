@@ -69,6 +69,7 @@ defmodule ExDag.DAG do
     )
   end
 
+  @spec set_handler(ExDag.DAG.t(), atom) :: ExDag.DAG.t()
   def set_handler(%__MODULE__{} = dag, handler) when is_atom(handler) do
     %__MODULE__{dag | handler: handler}
   end
@@ -98,14 +99,18 @@ defmodule ExDag.DAG do
     false
   end
 
+  @spec get_task(ExDag.DAG.t(), any) :: any
   def get_task(%__MODULE__{} = dag, task_id) do
     Map.get(dag.tasks, task_id)
   end
 
+  @spec add_task(ExDag.DAG.t(), keyword | ExDag.DAG.DAGTask.t()) ::
+          {:error, :invalid_task | :no_parent_task | :task_exists} | {:ok, ExDag.DAG.t()}
   def add_task(dag, task_or_opts) do
     do_add_task(dag, task_or_opts)
   end
 
+  @spec add_task!(ExDag.DAG.t(), keyword | ExDag.DAG.DAGTask.t()) :: ExDag.DAG.t()
   def add_task!(dag, task_or_opts) do
     case do_add_task(dag, task_or_opts) do
       {:ok, %__MODULE__{} = new_dag} ->
@@ -116,6 +121,7 @@ defmodule ExDag.DAG do
     end
   end
 
+  @spec add_task!(ExDag.DAG.t(), ExDag.DAG.DAGTask.t(), any) :: ExDag.DAG.t()
   def add_task!(dag, task_or_opts, parent_task_id) do
     case add_task(dag, task_or_opts, parent_task_id) do
       {:ok, %__MODULE__{} = new_dag} ->
@@ -126,6 +132,8 @@ defmodule ExDag.DAG do
     end
   end
 
+  @spec add_task(ExDag.DAG.t(), ExDag.DAG.DAGTask.t(), any) ::
+          {:error, :invalid_task | :no_parent_task | :task_exists} | {:ok, ExDag.DAG.t()}
   def add_task(
         %__MODULE__{status: @status_init, task_handler: default_handler} = dag,
         %DAGTask{handler: handler} = task,
@@ -203,7 +211,13 @@ defmodule ExDag.DAG do
       true ->
         case do_add_task(dag, task) do
           {:ok, dag} ->
-            {:ok, add_dependency(dag, parent_task.id, task.id)}
+            case add_dependency(dag, parent_task.id, task.id) do
+              %__MODULE__{} = dag ->
+                {:ok, dag}
+
+              {:error, error} ->
+                {:error, error}
+            end
 
           error ->
             error
@@ -214,13 +228,13 @@ defmodule ExDag.DAG do
     end
   end
 
-  def add_dependency(%__MODULE__{status: @status_init} = dag, %DAGTask{id: task1_id}, %DAGTask{
-        id: task2_id
-      }) do
+  defp add_dependency(%__MODULE__{status: @status_init} = dag, %DAGTask{id: task1_id}, %DAGTask{
+         id: task2_id
+       }) do
     add_dependency(dag, task1_id, task2_id)
   end
 
-  def add_dependency(%__MODULE__{status: @status_init} = dag, task1_id, task2_id) do
+  defp add_dependency(%__MODULE__{status: @status_init} = dag, task1_id, task2_id) do
     # add edge and update label with deps
     if Map.has_key?(dag.tasks, task1_id) and Map.has_key?(dag.tasks, task2_id) do
       edge = Graph.Edge.new(task1_id, task2_id)
@@ -237,10 +251,18 @@ defmodule ExDag.DAG do
     end
   end
 
+  @doc """
+  Returns a list of tasks that the given task depends on
+  """
+  @spec get_deps(ExDag.DAG.t(), task_id :: any) :: list()
   def get_deps(%__MODULE__{} = dag, task_id) do
     Map.get(dag.task_deps, task_id, [])
   end
 
+  @doc """
+  Returns all the runs for a DAG task
+  """
+  @spec get_runs(ExDag.DAG.t(), task_id :: any) :: list()
   def get_runs(%__MODULE__{} = dag, task_id) do
     dag.task_runs
     |> Map.get(task_id, [])
@@ -272,6 +294,29 @@ defmodule ExDag.DAG do
 
   def status_init() do
     @status_init
+  end
+
+  @doc """
+  Returns True if the last task (or tasks) in the DAG is completed
+  """
+  @spec completed?(ExDag.DAG.t()) :: boolean
+  def completed?(%__MODULE__{} = dag) do
+    tasks = get_last_tasks(dag)
+
+    Enum.all?(tasks, fn
+      {_task_id, %DAGTask{} = task} ->
+        DAGTask.is_completed(task)
+
+      task_id ->
+        DAGTask.is_completed(get_task(dag, task_id))
+    end)
+  end
+
+  @spec get_last_tasks(ExDag.DAG.t()) :: list
+  def get_last_tasks(%__MODULE__{} = dag) do
+    for v <- Graph.vertices(dag.g), Graph.in_degree(dag.g, v) == 0 do
+      v
+    end
   end
 
   defimpl String.Chars, for: __MODULE__ do

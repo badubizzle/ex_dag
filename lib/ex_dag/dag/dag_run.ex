@@ -6,6 +6,7 @@ defmodule ExDag.DAGRun do
   defstruct id: nil,
             dag: nil,
             started_at: nil,
+            updated_at: nil,
             ended_at: nil
 
   alias ExDag.DAG
@@ -14,6 +15,7 @@ defmodule ExDag.DAGRun do
           id: String.t(),
           dag: DAG.t(),
           started_at: DateTime.t(),
+          updated_at: DateTime.t(),
           ended_at: DateTime.t()
         }
 
@@ -21,7 +23,7 @@ defmodule ExDag.DAGRun do
   def new(%DAG{} = dag) do
     id = generate_id()
     now = DateTime.utc_now()
-    struct!(__MODULE__, dag: dag, id: id, started_at: now, ended_at: nil)
+    struct!(__MODULE__, dag: dag, id: id, started_at: now, ended_at: nil, updated_at: nil)
   end
 
   def generate_id() do

@@ -7,6 +7,7 @@ defmodule ExDag.DAG.DAGSupervisor do
   require Logger
 
   alias ExDag.DAG
+  alias ExDag.DAGRun
 
   @spec start_link(any) :: :ignore | {:error, any} | {:ok, pid}
   def start_link(args) do
@@ -26,6 +27,20 @@ defmodule ExDag.DAG.DAGSupervisor do
     spec = %{
       id: {ExDag.DAG.Server, dag_id},
       start: {ExDag.DAG.Server, :start_link, [dag]},
+      restart: :temporary,
+      type: :worker
+    }
+
+    DynamicSupervisor.start_child(__MODULE__, spec)
+  end
+
+  def resume_dag(%DAGRun{dag: dag} = dag_run) do
+    log = "Calling #{__MODULE__}.run_dag/1 with args: #{inspect(dag.dag_id)}"
+    Logger.log(:info, log)
+
+    spec = %{
+      id: {ExDag.DAG.Server, dag_run.run_id},
+      start: {ExDag.DAG.Server, :start_link, [dag_run]},
       restart: :temporary,
       type: :worker
     }

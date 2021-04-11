@@ -10,10 +10,6 @@ defmodule ExDagTest do
   end
 
   test "add dag task" do
-    callback = fn _task, _payload ->
-      {:ok, :done}
-    end
-
     task = DAGTask.new(id: :a, handler: __MODULE__, data: {:op, :+})
     dag = DAG.new("my dag")
     {:ok, dag} = DAG.add_task(dag, task)
@@ -31,10 +27,6 @@ defmodule ExDagTest do
   end
 
   test "adding duplicate tasks should result in error" do
-    callback = fn _task, _payload ->
-      {:ok, :done}
-    end
-
     dag =
       DAG.new("my dag")
       |> DAG.set_default_task_handler(__MODULE__)
@@ -57,7 +49,7 @@ defmodule ExDagTest do
     {:ok, dag} = DAG.add_task(dag, a)
     {:ok, dag} = DAG.add_task(dag, b)
 
-    assert :invalid_dag == Server.run_dag(dag)
+    assert {:error, :invalid_dag} == Server.run_dag(dag)
   end
 
   test "add dag task with parent task" do
@@ -80,6 +72,26 @@ defmodule ExDagTest do
       |> DAG.set_default_task_handler(__MODULE__)
 
     a = DAGTask.new(id: :a, data: {:op, :+})
-    assert {:error, :no_parent_task} = DAG.add_task(dag, a, :c)
+    {:ok, dag} = DAG.add_task(dag, a)
+    b = DAGTask.new(id: :b, data: {:op, :+})
+    result = DAG.add_task(dag, b, :c)
+    assert result == {:error, :no_parent_task}
+    assert Map.keys(dag.tasks) == [:a]
+  end
+
+  test "list last tasks" do
+    dag =
+      DAG.new("my dag")
+      |> DAG.set_default_task_handler(__MODULE__)
+
+    a = DAGTask.new(id: :a, data: {:op, :+})
+    b = DAGTask.new(id: :b, data: {:op, :+})
+    c = DAGTask.new(id: :c, data: {:op, :+})
+    {:ok, dag} = DAG.add_task(dag, a)
+    {:ok, dag} = DAG.add_task(dag, b, :a)
+    {:ok, dag} = DAG.add_task(dag, c, :b)
+
+    last_tasks = DAG.get_last_tasks(dag)
+    assert last_tasks == [:a]
   end
 end

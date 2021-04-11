@@ -2,8 +2,6 @@ defmodule ExDagStoreTest do
   use ExUnit.Case
   doctest ExDag
 
-  alias ExDag.DAG.Server
-  alias ExDag.DAG.DAGTask
   alias ExDag.DAG
   alias ExDag.DAGRun
 
@@ -44,8 +42,6 @@ defmodule ExDagStoreTest do
   test "delete dag" do
     dag_id = "dag1"
     dag = DAG.new(dag_id)
-
-    dag_run = DAGRun.new(dag)
 
     :ok = ExDag.Store.save_dag(dag)
     dags = ExDag.Store.get_dags()

@@ -25,17 +25,18 @@ defmodule ExDag.DAG.Server do
         start_link(dag)
 
       _ ->
-        :invalid_dag
+        {:error, :invalid_dag}
     end
   end
 
+  @spec resume_dag(ExDag.DAGRun.t()) :: {:error, :invalid_dag} | {:ok, pid}
   def resume_dag(%DAGRun{dag: dag} = dag_run) do
     case DAG.validate_for_run(dag) do
       true ->
-        start_link(dag)
+        start_link(dag_run)
 
       _ ->
-        :invalid_dag
+        {:error, :invalid_dag}
     end
   end
 
@@ -87,15 +88,21 @@ defmodule ExDag.DAG.Server do
   end
 
   @impl true
-  def handle_continue(:start, %DAGRun{dag: %{timer: nil, status: status}} = dag_run) do
+  def handle_continue(:start, %DAGRun{dag: %{status: status}} = dag_run) do
     Logger.debug("Starting DAG run")
     dag = dag_run.dag
 
-    if status == DAG.status_init() do
+    if status == DAG.status_init() or status == DAG.status_running() do
       case DAG.validate_for_run(dag) do
         true ->
           schedule_next_run(1000)
-          updated_dag = %DAGRun{dag_run | dag: %DAG{dag | status: DAG.status_running()}}
+
+          updated_dag = %DAGRun{
+            dag_run
+            | started_at: DateTime.utc_now(),
+              dag: %DAG{dag | status: DAG.status_running()}
+          }
+
           run_on_dag_completed(updated_dag)
           {:noreply, updated_dag}
 
@@ -122,7 +129,9 @@ defmodule ExDag.DAG.Server do
               dag.timer
             end
 
-          {task, {:noreply, %DAGRun{dag_run | dag: %DAG{new_state | timer: timer}}}}
+          {task,
+           {:noreply,
+            %DAGRun{dag_run | updated_at: DateTime.utc_now(), dag: %DAG{new_state | timer: timer}}}}
 
         {:error, error} ->
           {task, new_state} =
@@ -135,7 +144,9 @@ defmodule ExDag.DAG.Server do
               dag.timer
             end
 
-          {task, {:noreply, %DAGRun{dag_run | dag: %DAG{new_state | timer: timer}}}}
+          {task,
+           {:noreply,
+            %DAGRun{dag_run | updated_at: DateTime.utc_now(), dag: %DAG{new_state | timer: timer}}}}
       end
 
     {:noreply, new_run_state} = final_state
@@ -158,7 +169,9 @@ defmodule ExDag.DAG.Server do
           Enum.count(ready) > 0 ->
             Logger.debug("Scheduling tasks: #{inspect(ready)}")
             new_state = start_workers(ready, dag)
-            {:noreply, %DAGRun{dag_run | dag: %DAG{new_state | timer: nil}}}
+
+            {:noreply,
+             %DAGRun{dag_run | updated_at: DateTime.utc_now(), dag: %DAG{new_state | timer: nil}}}
 
           Enum.count(pending) > 0 ->
             Logger.debug("Tasks pending: #{inspect(pending)}")
@@ -167,7 +180,14 @@ defmodule ExDag.DAG.Server do
 
           completed == true ->
             Logger.debug("Completed DAG run")
-            dag_run = %DAGRun{dag_run | dag: %DAG{dag | status: DAG.status_done(), timer: nil}}
+
+            dag_run = %DAGRun{
+              dag_run
+              | updated_at: DateTime.utc_now(),
+                ended_at: DateTime.utc_now(),
+                dag: %DAG{dag | status: DAG.status_done(), timer: nil}
+            }
+
             run_on_dag_completed(dag_run)
             {:stop, :normal, dag_run}
 
