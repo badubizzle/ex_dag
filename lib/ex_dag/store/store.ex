@@ -2,6 +2,8 @@ defmodule ExDag.Store.Adapter do
   @moduledoc """
   Store Adapter Interface/Behaviour
   """
+  @callback init(options :: Keyword.t()) :: {:ok, Keyword.t()} | {:error, any()}
+
   @callback save_dag(options :: Keyword.t(), dag :: ExDag.DAG.t()) :: :ok | {:error, atom()}
   @callback get_dag_path(options :: Keyword.t(), dag :: ExDag.DAG.t()) ::
               {:ok, binary()} | {:error, binary()}
@@ -19,6 +21,16 @@ defmodule ExDag.Store do
   Store Module
   """
   require Logger
+
+  @spec init() :: :ok | {:error, any()}
+  def init() do
+    options = get_adapter_options()
+
+    case get_adapter().init(options) do
+      {:ok, _} -> :ok
+      {:error, any} -> {:error, any}
+    end
+  end
 
   @spec get_adapter :: atom()
   def get_adapter() do

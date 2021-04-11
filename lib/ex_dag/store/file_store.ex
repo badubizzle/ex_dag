@@ -5,6 +5,13 @@ defmodule ExDag.Store.FileStore do
   @behaviour ExDag.Store.Adapter
 
   @impl true
+  def init(options) do
+    dags_path = get_dags_path(options)
+    File.mkdir_p(dags_path)
+    {:ok, options}
+  end
+
+  @impl true
   def save_dag(options, dag) do
     dags_path = get_dags_path(options)
     file_name = "dag_file_#{dag.dag_id}"
