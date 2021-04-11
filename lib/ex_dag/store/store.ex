@@ -20,6 +20,9 @@ defmodule ExDag.Store do
   @moduledoc """
   Store Module
   """
+  alias ExDag.DAG
+  alias ExDag.DAGRun
+
   require Logger
 
   @spec init() :: :ok | {:error, any()}
@@ -45,6 +48,23 @@ defmodule ExDag.Store do
   @spec get_dag_path(ExDag.DAG.t()) :: {:ok, binary()} | {:error, binary()}
   def get_dag_path(dag) do
     call(:get_dag_path, dag)
+  end
+
+  @spec completed?(DAGRun.t() | DAG.t()) :: boolean
+  def completed?(%DAGRun{} = dag_run) do
+    completed?(dag_run.dag)
+  end
+
+  def completed?(%DAG{} = dag) do
+    DAG.completed?(dag)
+  end
+
+  def is_running(dag_run_id) do
+    ExDag.DAG.DAGSupervisor.get_running_dags()
+    |> Enum.map(fn %ExDag.DAGRun{id: run_id} ->
+      run_id
+    end)
+    |> Enum.member?(dag_run_id)
   end
 
   def get_dags() do

@@ -31,9 +31,13 @@ defmodule ExDag.DAG.Server do
 
   @spec resume_dag(ExDag.DAGRun.t()) :: {:error, :invalid_dag} | {:ok, pid}
   def resume_dag(%DAGRun{dag: dag} = dag_run) do
+    # clear all failed tasks
+    Logger.info("Resuming dag run: #{dag_run.id}")
+    dag = DAG.clear_failed_tasks_runs(dag)
+
     case DAG.validate_for_run(dag) do
       true ->
-        start_link(dag_run)
+        start_link(%DAGRun{dag_run | dag: dag})
 
       _ ->
         {:error, :invalid_dag}
@@ -48,6 +52,9 @@ defmodule ExDag.DAG.Server do
     case Swarm.whereis_name({:dag_run, dag_run_id}) do
       pid when is_pid(pid) ->
         GenServer.stop(pid)
+
+      _ ->
+        :not_found
     end
   end
 
@@ -64,6 +71,10 @@ defmodule ExDag.DAG.Server do
   end
 
   def start_link(%DAGRun{dag: %{dag_id: dag_id}} = dag_run) when is_binary(dag_id) do
+    Logger.info("Resuming dag run: #{dag_run.id}")
+    dag = DAG.clear_failed_tasks_runs(dag_run.dag)
+    dag_run = %DAGRun{dag_run | dag: dag}
+
     {:ok, pid} =
       GenServer.start_link(@server, dag_run, name: {:via, :swarm, {:dag_run, dag_run.id}})
 
@@ -164,6 +175,7 @@ defmodule ExDag.DAG.Server do
 
         cond do
           Enum.count(failed) > 0 ->
+            run_on_dag_completed(dag_run)
             {:stop, {:failed, failed}, dag_run}
 
           Enum.count(ready) > 0 ->
@@ -259,7 +271,7 @@ defmodule ExDag.DAG.Server do
     failed =
       tasks_to_run
       |> Enum.filter(fn t_id ->
-        !should_run_task(dag, t_id)
+        !DAG.should_run_task(dag, t_id)
       end)
 
     %{
@@ -300,25 +312,6 @@ defmodule ExDag.DAG.Server do
   defp ready_to_run(%DAGTask{start_date: date}) do
     d = DateTime.diff(date, DateTime.utc_now()) <= 0
     d
-  end
-
-  defp should_run_task(%DAG{} = dag, task_id) do
-    %DAGTask{last_run: last_run} = task = Map.get(dag.tasks, task_id)
-
-    failed = DAGTask.status_failed()
-
-    case last_run do
-      %DAGTaskRun{status: ^failed} ->
-        if task.stop_on_failure do
-          false
-        else
-          task_runs = Map.get(dag.task_runs, task_id)
-          task.retries && Enum.count(task_runs) < task.retries
-        end
-
-      _ ->
-        true
-    end
   end
 
   defp handled_task_result(%DAG{} = dag, pid, error, result, status, remove_task) do

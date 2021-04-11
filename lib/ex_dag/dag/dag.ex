@@ -4,6 +4,8 @@ defmodule ExDag.DAG do
   """
 
   alias ExDag.DAG.DAGTask
+  alias ExDag.DAG.DAGTaskRun
+  require Logger
 
   @status_init :init
 
@@ -211,13 +213,7 @@ defmodule ExDag.DAG do
       true ->
         case do_add_task(dag, task) do
           {:ok, dag} ->
-            case add_dependency(dag, parent_task.id, task.id) do
-              %__MODULE__{} = dag ->
-                {:ok, dag}
-
-              {:error, error} ->
-                {:error, error}
-            end
+            add_dependency(dag, parent_task.id, task.id)
 
           error ->
             error
@@ -245,7 +241,7 @@ defmodule ExDag.DAG do
         |> Graph.label_vertex(task1_id, {:deps, task2_id})
 
       dag = update_graph(dag, updated_g)
-      %__MODULE__{dag | task_deps: build_task_deps(dag)}
+      {:ok, %__MODULE__{dag | task_deps: build_task_deps(dag)}}
     else
       {:error, :invalid_task}
     end
@@ -319,6 +315,69 @@ defmodule ExDag.DAG do
     end
   end
 
+  def get_completed_tasks(%__MODULE__{} = dag) do
+    Enum.filter(dag.tasks, fn task ->
+      DAGTask.is_completed(task)
+    end)
+  end
+
+  def get_pending_tasks(%__MODULE__{} = dag) do
+    Enum.filter(dag.tasks, fn task ->
+      DAGTask.is_pending(task)
+    end)
+  end
+
+  def get_running_tasks(%__MODULE__{} = dag) do
+    Enum.filter(dag.tasks, fn task ->
+      DAGTask.is_running(task)
+    end)
+  end
+
+  @doc """
+  Clear failed taks. This is necessary for resuming DAGs
+  """
+  @spec clear_failed_tasks_runs(ExDag.DAG.t()) :: ExDag.DAG.t()
+  def clear_failed_tasks_runs(%__MODULE__{tasks: tasks} = dag) do
+    failed_ids =
+      tasks
+      |> Map.keys()
+      |> Enum.filter(fn t_id ->
+        !should_run_task(dag, t_id)
+      end)
+
+    Logger.info("Failed tasks: #{inspect(failed_ids)}")
+
+    tasks =
+      Enum.reduce(tasks, tasks, fn {task_id, task}, t ->
+        if Enum.member?(failed_ids, task_id) do
+          Map.put(t, task_id, %DAGTask{task | last_run: nil})
+        else
+          t
+        end
+      end)
+
+    %__MODULE__{dag | tasks: tasks}
+  end
+
+  def should_run_task(%__MODULE__{} = dag, task_id) do
+    %DAGTask{last_run: last_run} = task = Map.get(dag.tasks, task_id)
+
+    failed = DAGTask.status_failed()
+
+    case last_run do
+      %DAGTaskRun{status: ^failed} ->
+        if task.stop_on_failure do
+          false
+        else
+          task_runs = Map.get(dag.task_runs, task_id)
+          task.retries && Enum.count(task_runs) < task.retries
+        end
+
+      _ ->
+        true
+    end
+  end
+
   defimpl String.Chars, for: __MODULE__ do
     def to_string(dag) do
       "#DAG{tasks: #{inspect(dag.tasks)}}"
@@ -328,6 +387,7 @@ defmodule ExDag.DAG do
   defimpl Inspect, for: __MODULE__ do
     def inspect(dag, _opts) do
       to_string(dag)
+      dag
     end
   end
 end

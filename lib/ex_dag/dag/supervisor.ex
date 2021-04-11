@@ -35,17 +35,23 @@ defmodule ExDag.DAG.DAGSupervisor do
   end
 
   def resume_dag(%DAGRun{dag: dag} = dag_run) do
-    log = "Calling #{__MODULE__}.run_dag/1 with args: #{inspect(dag.dag_id)}"
-    Logger.log(:info, log)
+    log = "Resuming dag run. #{__MODULE__}.resume_dag/1 with args: #{inspect(dag.dag_id)}"
+    Logger.debug(log)
 
     spec = %{
-      id: {ExDag.DAG.Server, dag_run.run_id},
+      id: {ExDag.DAG.Server, dag_run.id},
       start: {ExDag.DAG.Server, :start_link, [dag_run]},
       restart: :temporary,
       type: :worker
     }
 
     DynamicSupervisor.start_child(__MODULE__, spec)
+  end
+
+  def stop_dag(%DAGRun{} = dag_run) do
+    log = "stopping dag run. #{__MODULE__}.resume_dag/1 with args: #{inspect(dag_run.id)}"
+    Logger.debug(log)
+    ExDag.DAG.Server.stop_dag_run(dag_run.id)
   end
 
   def running_dags() do
@@ -57,6 +63,7 @@ defmodule ExDag.DAG.DAGSupervisor do
     end
   end
 
+  @spec get_running_dags() :: list()
   def get_running_dags() do
     DynamicSupervisor.which_children(__MODULE__)
     |> Enum.map(fn {_, pid, _, _} ->
