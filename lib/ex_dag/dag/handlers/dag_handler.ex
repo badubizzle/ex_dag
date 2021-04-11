@@ -2,8 +2,9 @@ defmodule ExDag.DAG.Handlers.DAGHandler do
   @moduledoc """
   DAG handler interface/behavior
   """
-  alias ExDag.DAGRun
   alias ExDag.DAG.DAGTask
+  alias ExDag.DAGRun
+
 
   @callback on_task_completed(dag_run :: DAGRun.t(), task :: DAGTask.t(), result :: any()) ::
               any()

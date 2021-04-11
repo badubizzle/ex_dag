@@ -2,8 +2,8 @@ defmodule ExDag.DAG.Utils do
   @moduledoc """
   Utility module for running and test DAGs
   """
-  alias ExDag.DAG.Server
   alias ExDag.DAG
+  alias ExDag.DAG.Server
   alias ExDag.DAG.DAGTask
   alias ExDag.DAG.DAGTaskRun
 

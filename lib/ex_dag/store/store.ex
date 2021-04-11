@@ -40,6 +40,7 @@ defmodule ExDag.Store do
   end
 
   def get_dag_runs() do
+    []
   end
 
   def get_dag_runs(dag) do

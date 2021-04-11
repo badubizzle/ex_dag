@@ -18,13 +18,9 @@ defmodule ExDagStoreTest do
   test "save dag" do
     dag_id = "dag1"
     dag = DAG.new(dag_id)
-
     assert dag.dag_id == dag_id
-
     :ok = ExDag.Store.save_dag(dag)
-
     dags = ExDag.Store.get_dags()
-
     assert Enum.count(dags) == 1
     assert Map.get(dags, dag_id) == dag
 
@@ -57,6 +53,6 @@ defmodule ExDagStoreTest do
 
     :ok = ExDag.Store.delete_dag(dag)
     dags = ExDag.Store.get_dags()
-    assert Enum.count(dags) == 0
+    assert Enum.empty?(dags)
   end
 end
