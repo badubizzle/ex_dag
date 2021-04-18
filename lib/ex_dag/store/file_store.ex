@@ -89,6 +89,26 @@ defmodule ExDag.Store.FileStore do
     File.rm!(dag_file)
   end
 
+  @impl true
+  @spec get_dag_run(options :: Keyword.t(), dag_id :: binary(), run_id :: binary()) ::
+          {:ok, DAGRun.t()} | {:error, any()}
+  @doc """
+  Returns a DAGRun for the given dag_id and run_id
+  """
+  def get_dag_run(options, dag_id, run_id) do
+    dags_path = get_dags_path(options)
+    runs_path = Path.join([dags_path, "runs", dag_id])
+    run_file_path = Path.join([runs_path, run_id])
+
+    case File.read(run_file_path) do
+      {:ok, content} ->
+        :erlang.binary_to_term(content)
+
+      {:error, _} ->
+        {:error, :not_found}
+    end
+  end
+
   defp get_dags_path(options) do
     Keyword.get(options, :dags_path)
   end

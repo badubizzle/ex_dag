@@ -14,6 +14,9 @@ defmodule ExDag.Store.Adapter do
   @callback delete_dag(options :: Keyword.t(), dag :: ExDag.DAG.t()) :: :ok | {:error, term}
 
   @callback get_dag_runs(options :: Keyword.t(), dag :: ExDag.DAG.t()) :: map()
+
+  @callback get_dag_run(options :: Keyword.t(), dag_id :: binary(), run_id :: binary()) ::
+              {:ok, ExDag.DAGRun.t()} | {:error, any()}
 end
 
 defmodule ExDag.Store do
@@ -73,6 +76,14 @@ defmodule ExDag.Store do
 
   def get_dag_runs() do
     []
+  end
+
+  @spec get_dag_run(dag_run :: binary(), run_id :: binary()) ::
+          {:ok, DAGRun.t()} | {:error, any()}
+  def get_dag_run(dag_id, run_id) do
+    adapter = get_adapter()
+    options = get_adapter_options()
+    adapter.get_dag_run(options, dag_id, run_id)
   end
 
   def get_dag_runs(dag) do
