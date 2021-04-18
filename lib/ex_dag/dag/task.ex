@@ -2,6 +2,10 @@ defmodule ExDag.DAG.DAGTask do
   @moduledoc """
   A DAG Task
   """
+  @derive {Jason.Encoder, except: [:__struct__, :last_run, :handler]}
+
+  @derive {Inspect, except: [:__struct__, :last_run, :handler]}
+
   @enforce_keys [:id]
   defstruct id: nil,
             status: nil,
@@ -73,9 +77,5 @@ defmodule ExDag.DAG.DAGTask do
 
   def status_running() do
     @status_running
-  end
-
-  def validate(_t) do
-    false
   end
 end

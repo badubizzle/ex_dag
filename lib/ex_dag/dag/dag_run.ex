@@ -2,6 +2,11 @@ defmodule ExDag.DAGRun do
   @moduledoc """
   Represents a running instance of a DAG
   """
+
+  @derive {Jason.Encoder, only: [:id, :dag, :updated_at, :started_at, :ended_at]}
+
+  @derive {Inspect, only: [:id, :dag, :updated_at, :started_at, :ended_at]}
+
   @enforce_keys [:id, :dag]
   defstruct id: nil,
             dag: nil,

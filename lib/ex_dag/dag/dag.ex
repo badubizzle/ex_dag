@@ -7,6 +7,9 @@ defmodule ExDag.DAG do
   alias ExDag.DAG.DAGTaskRun
   require Logger
 
+  @derive {Inspect, only: [:dag_id, :status]}
+  @derive {Jason.Encoder, only: [:dag_id, :status]}
+
   @status_init :init
 
   @enforce_keys [:dag_id, :g]
@@ -26,6 +29,7 @@ defmodule ExDag.DAG do
   @status_running :running
   @status_done :done
   @status_init :init
+  @root :__root
 
   @type t :: %__MODULE__{
           dag_id: String.t(),
@@ -49,6 +53,9 @@ defmodule ExDag.DAG do
 
   def new(dag_id, handler, task_handler) when is_binary(dag_id) and is_atom(handler) do
     g = Graph.new(type: :directed)
+    # |> Graph.add_vertex(@root)
+
+    # root_task = DAGTask.new(id: @root, handler: :none)
     running = %{}
     failed = %{}
     completed = %{}
@@ -69,6 +76,10 @@ defmodule ExDag.DAG do
       status: :init,
       task_handler: task_handler
     )
+  end
+
+  def get_tasks(%__MODULE__{} = dag) do
+    Map.keys(dag.tasks) -- [@root]
   end
 
   @spec set_handler(ExDag.DAG.t(), atom) :: ExDag.DAG.t()
@@ -94,7 +105,7 @@ defmodule ExDag.DAG do
   Returns true or false if DAG  has valid DAG structure
   """
   def validate_for_run(%__MODULE__{g: g}) do
-    Enum.count(Graph.vertices(g)) <= 1 or Graph.is_tree?(g)
+    Graph.is_tree?(g)
   end
 
   def validate_for_run(_dag) do
@@ -315,6 +326,35 @@ defmodule ExDag.DAG do
     end
   end
 
+  def sorted_tasks(%__MODULE__{tasks: tasks} = dag) do
+    task_ids = Map.keys(tasks)
+    # Deps: %{a: [:b, :c], c: [:d, :e], d: [:f, :g], e: [:h, :i]}
+    # Sorted Ids: [:a, :c, :e, :i, :h, :d, :g, :f, :b]
+
+    # Deps: %{a: [:b, :c], c: [:d, :e], d: [:f, :g], e: [:h, :i]}
+    # Sorted Ids: [:a, :b, :c, :d, :f, :g, :e, :h, :i]
+
+    g =
+      Graph.new(type: :directed)
+      |> Graph.add_vertices(task_ids)
+
+    edges =
+      Enum.map(dag.task_deps, fn {task_id, deps} ->
+        Enum.map(deps, fn dep -> {task_id, dep} end)
+      end)
+      |> List.flatten()
+
+    g = Graph.add_edges(g, edges)
+    sorted_ids = Graph.postorder(g)
+
+    sorted_ids
+    |> Enum.reverse()
+    |> Enum.map(fn task_id ->
+      {task_id, Map.from_struct(get_task(dag, task_id))}
+    end)
+    |> Map.new()
+  end
+
   def get_completed_tasks(%__MODULE__{} = dag) do
     Enum.filter(dag.tasks, fn task ->
       DAGTask.is_completed(task)
@@ -381,13 +421,6 @@ defmodule ExDag.DAG do
   defimpl String.Chars, for: __MODULE__ do
     def to_string(dag) do
       "#DAG{tasks: #{inspect(dag.tasks)}}"
-    end
-  end
-
-  defimpl Inspect, for: __MODULE__ do
-    def inspect(dag, _opts) do
-      to_string(dag)
-      dag
     end
   end
 end

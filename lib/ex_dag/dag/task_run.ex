@@ -4,6 +4,11 @@ defmodule ExDag.DAG.DAGTaskRun do
   """
   alias ExDag.DAG.DAGTask
 
+  @derive {Jason.Encoder,
+           only: [:task_id, :task, :status, :started_at, :ended_at, :result, :payload]}
+
+  @derive {Inspect, only: [:task_id, :task, :status, :started_at, :ended_at, :result, :payload]}
+
   @enforce_keys [:task_id, :task]
   defstruct task: nil,
             task_id: nil,
