@@ -180,10 +180,7 @@ defmodule ExDag.DAG.Server do
 
           Enum.count(ready) > 0 ->
             Logger.debug("Scheduling tasks: #{inspect(ready)}")
-            new_state = start_workers(ready, dag)
-
-            {:noreply,
-             %DAGRun{dag_run | updated_at: DateTime.utc_now(), dag: %DAG{new_state | timer: nil}}}
+            start_workers(ready, dag_run)
 
           Enum.count(pending) > 0 ->
             Logger.debug("Tasks pending: #{inspect(pending)}")
@@ -293,6 +290,21 @@ defmodule ExDag.DAG.Server do
     end
   end
 
+  defp run_on_task_started(
+         %DAGRun{dag: %DAG{handler: handler}} = dag_run,
+         %DAGTaskRun{} = task_run
+       ) do
+    Logger.debug(fn ->
+      "Calling task started callback #{task_run.task_id}  #{inspect(handler)}"
+    end)
+
+    if function_exported?(handler, :on_task_started, 2) do
+      apply(handler, :on_task_started, [dag_run, task_run])
+    else
+      Logger.debug(fn -> "No task started callback found" end)
+    end
+  end
+
   defp run_on_task_completed(%DAGRun{dag: %DAG{handler: handler}} = dag_run, task, result) do
     Logger.debug(fn ->
       "Calling task completed callback #{task.id}  #{inspect(handler)}"
@@ -345,13 +357,13 @@ defmodule ExDag.DAG.Server do
     {task, %DAG{dag | g: g, task_runs: task_runs, running: running, tasks: tasks}}
   end
 
-  defp start_workers([], %DAG{} = dag) do
-    dag
+  defp start_workers([], %DAGRun{dag: dag} = dag_run) do
+    {:noreply, %DAGRun{dag_run | dag: %DAG{dag | timer: nil}}}
   end
 
-  defp start_workers([t | rest], %DAG{} = dag) do
+  defp start_workers([t | rest], %DAGRun{dag: dag} = dag_run) do
     deps = Map.get(dag.task_deps, t, [])
-    task = Map.get(dag.tasks, t)
+    %DAGTask{} = task = Map.get(dag.tasks, t)
 
     completed = DAGTask.status_completed()
 
@@ -382,10 +394,17 @@ defmodule ExDag.DAG.Server do
             last_run: task_run
         })
 
-      start_workers(rest, %DAG{dag | tasks: tasks, running: running_tasks})
+      dag_run = %DAGRun{
+        dag_run
+        | updated_at: DateTime.utc_now(),
+          dag: %DAG{dag | tasks: tasks, running: running_tasks}
+      }
+
+      run_on_task_started(dag_run, task_run)
+      start_workers(rest, dag_run)
     else
       Logger.debug("Cannot start task #{inspect(t)} because deps are not ready")
-      start_workers(rest, dag)
+      start_workers(rest, dag_run)
     end
   end
 
