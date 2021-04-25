@@ -47,11 +47,11 @@ defmodule ExDag.DAG do
   @doc """
   Create a new DAG dag struct
   """
-  def new(dag_id) do
+  def new(dag_id) when is_binary(dag_id) and byte_size(dag_id) > 0 do
     new(dag_id, nil, nil)
   end
 
-  def new(dag_id, handler, task_handler) when is_binary(dag_id) and is_atom(handler) do
+  def new(dag_id, handler, task_handler) when is_binary(dag_id) and byte_size(dag_id) > 0 and is_atom(handler) do
     g = Graph.new(type: :directed)
     # |> Graph.add_vertex(@root)
 
@@ -264,6 +264,11 @@ defmodule ExDag.DAG do
   @spec get_deps(ExDag.DAG.t(), task_id :: any) :: list()
   def get_deps(%__MODULE__{} = dag, task_id) do
     Map.get(dag.task_deps, task_id, [])
+  end
+
+  @spec get_deps_map(ExDag.DAG.t()) :: map()
+  def get_deps_map(%__MODULE__{} = dag) do
+    dag.task_deps
   end
 
   @doc """
