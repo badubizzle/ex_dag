@@ -51,7 +51,12 @@ defmodule ExDag.DAG do
     new(dag_id, nil, nil)
   end
 
-  def new(dag_id, handler, task_handler) when is_binary(dag_id) and byte_size(dag_id) > 0 and is_atom(handler) do
+  def new(_dag_id) do
+    {:error, :invalid_dag_id}
+  end
+
+  def new(dag_id, handler, task_handler)
+      when is_binary(dag_id) and byte_size(dag_id) > 0 and is_atom(handler) do
     g = Graph.new(type: :directed)
     # |> Graph.add_vertex(@root)
 
@@ -183,24 +188,37 @@ defmodule ExDag.DAG do
 
     if is_nil(parent) do
       task = DAGTask.new(opts)
-      do_add_task(dag, task)
+
+      if DAGTask.validate(task) do
+        do_add_task(dag, task)
+      else
+        {:error, :invalid_dag_task}
+      end
     else
       opts = Keyword.delete(opts, :parent)
       task = DAGTask.new(opts)
-      add_task(dag, task, parent)
+
+      if DAGTask.validate(task) do
+        add_task(dag, task, parent)
+      else
+        {:error, :invalid_dag_task}
+      end
     end
   end
 
   defp do_add_task(
          %__MODULE__{task_handler: default_handler} = dag,
          %DAGTask{handler: handler} = task
-       ) do
+       )
+       when is_atom(default_handler) or is_atom(handler) do
     task =
       if is_nil(handler) do
         %DAGTask{task | handler: default_handler}
       else
         task
       end
+
+    Logger.info("Adding new task: #{inspect(Map.from_struct(task))}")
 
     case DAGTask.validate(task) do
       true ->
