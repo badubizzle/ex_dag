@@ -403,8 +403,13 @@ defmodule ExDag.DAG.Server do
       run_on_task_started(dag_run, task_run)
       start_workers(rest, dag_run)
     else
-      Logger.debug("Cannot start task #{inspect(t)} because deps are not ready")
-      start_workers(rest, dag_run)
+      unfinished_deps = deps -- completed_deps
+
+      Logger.debug(
+        "Cannot start task #{inspect(t)} because deps: #{inspect(unfinished_deps)} are not ready"
+      )
+
+      start_workers(rest ++ unfinished_deps, dag_run)
     end
   end
 
