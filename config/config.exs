@@ -21,4 +21,8 @@ if Mix.env() == :dev do
       "format",
       "credo explain"
     ]
+
+  config :husky,
+    pre_commit: "mix format && mix credo",
+    pre_push: "mix format --check-formatted && mix credo && mix test"
 end
