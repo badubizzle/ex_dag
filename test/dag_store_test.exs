@@ -51,4 +51,17 @@ defmodule ExDagStoreTest do
     dags = ExDag.Store.get_dags()
     assert Enum.empty?(dags)
   end
+
+  test "get dag run" do
+    dag_id = "dag2"
+    %DAG{} = dag = DAG.new(dag_id)
+    %DAGRun{} = dag_run = DAGRun.new(dag)
+    :ok = ExDag.Store.save_dag_run(dag_run)
+    dag_runs = ExDag.Store.get_dag_runs(dag)
+    assert Enum.count(dag_runs) == 1
+    {:ok, result} = ExDag.Store.get_dag_run(dag.dag_id, dag_run.id)
+    assert dag_run == result
+
+    assert {:error, :not_found} = ExDag.Store.get_dag_run(dag.dag_id, "not_found")
+  end
 end
