@@ -4,9 +4,10 @@ defmodule ExDag.Store.FileStore do
   """
   @behaviour ExDag.Store.Adapter
   alias ExDag.DAG
+  require Logger
 
   @impl true
-  def init(options) do
+  def init_store(options) do
     dags_path = get_dags_path(options)
     File.mkdir_p(dags_path)
     {:ok, options}
@@ -17,6 +18,7 @@ defmodule ExDag.Store.FileStore do
     dags_path = get_dags_path(options)
     file_name = "dag_file_#{dag.dag_id}"
     path = Path.join(dags_path, file_name)
+    Logger.debug("Saving dag to file: #{path}")
     File.write(path, :erlang.term_to_binary(dag), [:write])
   end
 
@@ -34,12 +36,15 @@ defmodule ExDag.Store.FileStore do
     runs_path = Path.join([dags_path, "runs", dag.dag_id])
     File.mkdir_p(runs_path)
     path = Path.join([runs_path, dag_run.id])
+    Logger.debug("Saving dag run to file: #{path}")
     File.write(path, :erlang.term_to_binary(dag_run), [:write])
   end
 
   @impl true
   def get_dags(options) do
     dags_path = Keyword.get(options, :dags_path)
+
+    Logger.debug("Getting dags from path: #{dags_path}")
 
     case File.dir?(dags_path) do
       true ->
@@ -90,8 +95,6 @@ defmodule ExDag.Store.FileStore do
   end
 
   @impl true
-  @spec get_dag_run(options :: Keyword.t(), dag_id :: binary(), run_id :: binary()) ::
-          {:ok, DAGRun.t()} | {:error, any()}
   @doc """
   Returns a DAGRun for the given dag_id and run_id
   """
@@ -100,9 +103,12 @@ defmodule ExDag.Store.FileStore do
     runs_path = Path.join([dags_path, "runs", dag_id])
     run_file_path = Path.join([runs_path, run_id])
 
+    Logger.debug("Getting dag run from file: #{run_file_path}")
+
     case File.read(run_file_path) do
       {:ok, content} ->
-        :erlang.binary_to_term(content)
+        %ExDag.DAGRun{} = dag_run = :erlang.binary_to_term(content)
+        {:ok, dag_run}
 
       {:error, _} ->
         {:error, :not_found}
