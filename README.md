@@ -93,13 +93,13 @@ For instance node a can have a task like this
 task_a = %{
     id: :a,
     data: %{op: :+},
-    handker: handler_module
+    handler: handler_module
 }
 
 task_b = %{
     id: :b,
     data: %{value: 2},
-    callback: handler_module
+    handler: handler_module
 }
 ```
 
