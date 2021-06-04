@@ -53,18 +53,15 @@ We can run a task under 2 conditions
 Given this,
 We can start running tasks *f, g, h, i, b* since they have no dependencies.
 
-Taking advantage of Elixir processes we can run these tasks in concurrently
+Taking advantage of Elixir processes we can run these tasks concurrently
 
 Once those tasks are completed we pick the next available tasks and run them.
 
 ### Task structure
 
-Each task will have a *id, data, callback*
-The callback is must be a function with arity 2
+Each task will have a *id, data, handler*
+The handler is must module that implements the `ExDag.DAG.Handlers.TaskHandler` behaviour.
 
-The callback can be either an anonymous function or a {m, f, _a}
-
-The first argument to the callback is the task itself and the second argument is a map of the results from all child tasks it depends on
 
 ### Example Mathematic equation
 
