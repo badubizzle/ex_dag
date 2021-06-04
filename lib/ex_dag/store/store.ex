@@ -12,8 +12,10 @@ defmodule ExDag.Store.Adapter do
               {:ok, binary()} | {:error, binary()}
   @callback save_dag_run(options :: Keyword.t(), dag_run :: ExDag.DAGRun.t()) ::
               :ok | {:error, atom()}
-  @callback get_dags(Keyword.t()) :: map()
+  @callback get_dags(options :: Keyword.t()) :: map()
 
+  @callback get_dag(options :: Keyword.t(), dag_id :: binary()) ::
+              {:ok, ExDag.DAG.t()} | {:error, term}
   @callback delete_dag(options :: Keyword.t(), dag :: ExDag.DAG.t()) :: :ok | {:error, term}
 
   @callback get_dag_runs(options :: Keyword.t(), dag :: ExDag.DAG.t()) :: map()
@@ -75,6 +77,10 @@ defmodule ExDag.Store do
 
   def get_dags() do
     call(:get_dags)
+  end
+
+  def get_dag(dag_id) do
+    call(:get_dag, dag_id)
   end
 
   @spec get_dag_run(dag_run :: binary(), run_id :: binary()) ::

@@ -63,6 +63,26 @@ defmodule ExDag.Store.FileStore do
     end
   end
 
+  def get_dag(options, dag_id) when is_binary(dag_id) do
+    dags_path = Keyword.get(options, :dags_path)
+    file_name = "dag_file_#{dag_id}"
+
+    path = Path.join([dags_path, file_name])
+
+    case File.read(path) do
+      {:ok, content} ->
+        try do
+          :erlang.binary_to_term(content)
+        rescue
+          e ->
+            {:error, "Could not load dag"}
+        end
+
+      _ ->
+        {:error, "Could not find dag"}
+    end
+  end
+
   @impl true
   @spec get_dag_runs(options :: Keyword.t(), dag :: DAG.t()) :: map()
   def get_dag_runs(options, %DAG{} = dag) do

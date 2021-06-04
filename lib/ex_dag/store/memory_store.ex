@@ -40,6 +40,16 @@ defmodule ExDag.Store.MemoryStoreData do
     dags
   end
 
+  def get_dag(%__MODULE__{dags: dags}, dag_id) do
+    case Map.get(dags, dag_id) do
+      %DAG{} = dag ->
+        dag
+
+      nil ->
+        {:error, "Dag not found"}
+    end
+  end
+
   def add_run(%__MODULE__{runs: runs} = data, %DAGRun{dag: %DAG{} = dag} = dag_run) do
     dag_id = dag.dag_id
 
@@ -87,10 +97,25 @@ defmodule ExDag.Store.MemoryStore do
     {:reply, dags, state}
   end
 
+  @impl GenServer
+  def handle_call({:get_dag, dag_id}, _from, state) do
+    result =
+      case MemoryStoreData.get_dag(state, dag_id) do
+        %DAG{} = dag ->
+          {:ok, dag}
+
+        {:error, error} ->
+          {:error, error}
+
+        _ ->
+          {:error, "Could not load dag"}
+      end
+
+    {:reply, result, state}
+  end
+
   def handle_call({:get_dag_runs, %DAG{} = dag, _options}, _from, %MemoryStoreData{} = state) do
     runs = MemoryStoreData.get_runs(state, dag.dag_id)
-
-    Logger.info("Get data runs => #{inspect(runs)}")
     {:reply, runs, state}
   end
 
@@ -130,6 +155,11 @@ defmodule ExDag.Store.MemoryStore do
   @impl ExDag.Store.Adapter
   def get_dags(_options) do
     GenServer.call(__MODULE__, :get_dags)
+  end
+
+  @impl ExDag.Store.Adapter
+  def get_dag(_options, dag_id) do
+    GenServer.call(__MODULE__, {:get_dag, dag_id})
   end
 
   @impl ExDag.Store.Adapter
