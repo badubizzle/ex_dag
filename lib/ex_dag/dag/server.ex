@@ -25,7 +25,22 @@ defmodule ExDag.DAG.Server do
         start_link(dag)
 
       _ ->
-        :invalid_dag
+        {:error, :invalid_dag}
+    end
+  end
+
+  @spec resume_dag(ExDag.DAGRun.t()) :: {:error, :invalid_dag} | {:ok, pid}
+  def resume_dag(%DAGRun{dag: dag} = dag_run) do
+    # clear all failed tasks
+    Logger.info("Resuming dag run: #{dag_run.id}")
+    dag = DAG.clear_failed_tasks_runs(dag)
+
+    case DAG.validate_for_run(dag) do
+      true ->
+        start_link(%DAGRun{dag_run | dag: dag})
+
+      _ ->
+        {:error, :invalid_dag}
     end
   end
 
@@ -37,6 +52,9 @@ defmodule ExDag.DAG.Server do
     case Swarm.whereis_name({:dag_run, dag_run_id}) do
       pid when is_pid(pid) ->
         GenServer.stop(pid)
+
+      _ ->
+        :not_found
     end
   end
 
@@ -46,6 +64,19 @@ defmodule ExDag.DAG.Server do
 
     {:ok, pid} =
       GenServer.start_link(@server, dag_run, name: {:via, :swarm, {:dag_run, dag_run_id}})
+
+    Swarm.join(:dags, pid)
+    Swarm.join({:dag_runs, dag_id}, pid)
+    {:ok, pid}
+  end
+
+  def start_link(%DAGRun{dag: %{dag_id: dag_id}} = dag_run) when is_binary(dag_id) do
+    Logger.info("Resuming dag run: #{dag_run.id}")
+    dag = DAG.clear_failed_tasks_runs(dag_run.dag)
+    dag_run = %DAGRun{dag_run | dag: dag}
+
+    {:ok, pid} =
+      GenServer.start_link(@server, dag_run, name: {:via, :swarm, {:dag_run, dag_run.id}})
 
     Swarm.join(:dags, pid)
     Swarm.join({:dag_runs, dag_id}, pid)
@@ -68,15 +99,21 @@ defmodule ExDag.DAG.Server do
   end
 
   @impl true
-  def handle_continue(:start, %DAGRun{dag: %{timer: nil, status: status}} = dag_run) do
+  def handle_continue(:start, %DAGRun{dag: %{status: status}} = dag_run) do
     Logger.debug("Starting DAG run")
     dag = dag_run.dag
 
-    if status == DAG.status_init() do
+    if status == DAG.status_init() or status == DAG.status_running() do
       case DAG.validate_for_run(dag) do
         true ->
           schedule_next_run(1000)
-          updated_dag = %DAGRun{dag_run | dag: %DAG{dag | status: DAG.status_running()}}
+
+          updated_dag = %DAGRun{
+            dag_run
+            | started_at: DateTime.utc_now(),
+              dag: %DAG{dag | status: DAG.status_running()}
+          }
+
           run_on_dag_completed(updated_dag)
           {:noreply, updated_dag}
 
@@ -103,7 +140,9 @@ defmodule ExDag.DAG.Server do
               dag.timer
             end
 
-          {task, {:noreply, %DAGRun{dag_run | dag: %DAG{new_state | timer: timer}}}}
+          {task,
+           {:noreply,
+            %DAGRun{dag_run | updated_at: DateTime.utc_now(), dag: %DAG{new_state | timer: timer}}}}
 
         {:error, error} ->
           {task, new_state} =
@@ -116,11 +155,13 @@ defmodule ExDag.DAG.Server do
               dag.timer
             end
 
-          {task, {:noreply, %DAGRun{dag_run | dag: %DAG{new_state | timer: timer}}}}
+          {task,
+           {:noreply,
+            %DAGRun{dag_run | updated_at: DateTime.utc_now(), dag: %DAG{new_state | timer: timer}}}}
       end
 
-    {:noreply, new_state} = final_state
-    run_on_task_completed(new_state, task, result)
+    {:noreply, new_run_state} = final_state
+    run_on_task_completed(new_run_state, task, result)
     final_state
   end
 
@@ -134,12 +175,12 @@ defmodule ExDag.DAG.Server do
 
         cond do
           Enum.count(failed) > 0 ->
+            run_on_dag_completed(dag_run)
             {:stop, {:failed, failed}, dag_run}
 
           Enum.count(ready) > 0 ->
             Logger.debug("Scheduling tasks: #{inspect(ready)}")
-            new_state = start_workers(ready, dag)
-            {:noreply, %DAGRun{dag_run | dag: %DAG{new_state | timer: nil}}}
+            start_workers(ready, dag_run)
 
           Enum.count(pending) > 0 ->
             Logger.debug("Tasks pending: #{inspect(pending)}")
@@ -148,7 +189,14 @@ defmodule ExDag.DAG.Server do
 
           completed == true ->
             Logger.debug("Completed DAG run")
-            dag_run = %DAGRun{dag_run | dag: %DAG{dag | status: DAG.status_done(), timer: nil}}
+
+            dag_run = %DAGRun{
+              dag_run
+              | updated_at: DateTime.utc_now(),
+                ended_at: DateTime.utc_now(),
+                dag: %DAG{dag | status: DAG.status_done(), timer: nil}
+            }
+
             run_on_dag_completed(dag_run)
             {:stop, :normal, dag_run}
 
@@ -220,7 +268,7 @@ defmodule ExDag.DAG.Server do
     failed =
       tasks_to_run
       |> Enum.filter(fn t_id ->
-        !should_run_task(dag, t_id)
+        !DAG.should_run_task(dag, t_id)
       end)
 
     %{
@@ -242,9 +290,24 @@ defmodule ExDag.DAG.Server do
     end
   end
 
+  defp run_on_task_started(
+         %DAGRun{dag: %DAG{handler: handler}} = dag_run,
+         %DAGTaskRun{} = task_run
+       ) do
+    Logger.debug(fn ->
+      "Calling task started callback #{task_run.task_id}  #{inspect(handler)}"
+    end)
+
+    if function_exported?(handler, :on_task_started, 2) do
+      apply(handler, :on_task_started, [dag_run, task_run])
+    else
+      Logger.debug(fn -> "No task started callback found" end)
+    end
+  end
+
   defp run_on_task_completed(%DAGRun{dag: %DAG{handler: handler}} = dag_run, task, result) do
     Logger.debug(fn ->
-      "Calling task completed callback #{task.id}"
+      "Calling task completed callback #{task.id}  #{inspect(handler)}"
     end)
 
     if function_exported?(handler, :on_task_completed, 3) do
@@ -261,25 +324,6 @@ defmodule ExDag.DAG.Server do
   defp ready_to_run(%DAGTask{start_date: date}) do
     d = DateTime.diff(date, DateTime.utc_now()) <= 0
     d
-  end
-
-  defp should_run_task(%DAG{} = dag, task_id) do
-    %DAGTask{last_run: last_run} = task = Map.get(dag.tasks, task_id)
-
-    failed = DAGTask.status_failed()
-
-    case last_run do
-      %DAGTaskRun{status: ^failed} ->
-        if task.stop_on_failure do
-          false
-        else
-          task_runs = Map.get(dag.task_runs, task_id)
-          task.retries && Enum.count(task_runs) < task.retries
-        end
-
-      _ ->
-        true
-    end
   end
 
   defp handled_task_result(%DAG{} = dag, pid, error, result, status, remove_task) do
@@ -313,13 +357,13 @@ defmodule ExDag.DAG.Server do
     {task, %DAG{dag | g: g, task_runs: task_runs, running: running, tasks: tasks}}
   end
 
-  defp start_workers([], %DAG{} = dag_run) do
-    dag_run
+  defp start_workers([], %DAGRun{dag: dag} = dag_run) do
+    {:noreply, %DAGRun{dag_run | dag: %DAG{dag | timer: nil}}}
   end
 
-  defp start_workers([t | rest], %DAG{} = dag) do
+  defp start_workers([t | rest], %DAGRun{dag: dag} = dag_run) do
     deps = Map.get(dag.task_deps, t, [])
-    task = Map.get(dag.tasks, t)
+    %DAGTask{} = task = Map.get(dag.tasks, t)
 
     completed = DAGTask.status_completed()
 
@@ -350,10 +394,22 @@ defmodule ExDag.DAG.Server do
             last_run: task_run
         })
 
-      start_workers(rest, %DAG{dag | tasks: tasks, running: running_tasks})
+      dag_run = %DAGRun{
+        dag_run
+        | updated_at: DateTime.utc_now(),
+          dag: %DAG{dag | tasks: tasks, running: running_tasks}
+      }
+
+      run_on_task_started(dag_run, task_run)
+      start_workers(rest, dag_run)
     else
-      Logger.debug("Cannot start task #{inspect(t)} because deps are not ready")
-      start_workers(rest, dag)
+      unfinished_deps = deps -- completed_deps
+
+      Logger.debug(
+        "Cannot start task #{inspect(t)} because deps: #{inspect(unfinished_deps)} are not ready"
+      )
+
+      start_workers(rest ++ unfinished_deps, dag_run)
     end
   end
 

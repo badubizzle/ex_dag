@@ -2,6 +2,10 @@ defmodule ExDag.DAG.DAGTask do
   @moduledoc """
   A DAG Task
   """
+  @derive {Jason.Encoder, except: [:__struct__, :last_run, :handler]}
+
+  @derive {Inspect, except: [:__struct__, :last_run, :handler]}
+
   @enforce_keys [:id]
   defstruct id: nil,
             status: nil,
@@ -25,14 +29,21 @@ defmodule ExDag.DAG.DAGTask do
           stop_on_failure: boolean(),
           retries: non_neg_integer(),
           start_date: DateTime.t(),
-          data: any(),
+          data: map(),
           handler: atom() | nil
         }
   @doc """
   Create a new task
   """
   def new(opts) do
-    struct(__MODULE__, opts)
+    Logger.debug("Creating new task: #{inspect(opts)}")
+    id = Keyword.get(opts, :id)
+
+    if is_binary(id) and byte_size(id) > 0 do
+      struct(__MODULE__, opts)
+    else
+      {:error, :invalid_task_id}
+    end
   end
 
   def set_handler(%__MODULE__{} = dag, handler) when is_atom(handler) do
@@ -42,8 +53,9 @@ defmodule ExDag.DAG.DAGTask do
   @doc """
   Validate a task
   """
-  def validate(%__MODULE__{id: id, handler: handler})
-      when not is_nil(id) and not is_nil(handler) and is_atom(handler) do
+  def validate(%__MODULE__{id: id, data: data, handler: handler})
+      when is_binary(id) and byte_size(id) > 0 and is_atom(handler) and is_map(data) and
+             not is_nil(handler) do
     true
   end
 
@@ -73,9 +85,5 @@ defmodule ExDag.DAG.DAGTask do
 
   def status_running() do
     @status_running
-  end
-
-  def validate(_t) do
-    false
   end
 end

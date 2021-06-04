@@ -14,9 +14,9 @@ def deps do
 end
 ```
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at [https://hexdocs.pm/ex_dag](https://hexdocs.pm/ex_dag).
+----
+ExDAG Task
+
 
 
 Example
@@ -92,84 +92,98 @@ For instance node a can have a task like this
 ```elixir
 task_a = %{
     id: :a,
-    data: {:op, :+},
-    callback: fn _t, %{b: b , c: c} ->
-    b + c
-    end
+    data: %{op: :+},
+    handker: handler_module
 }
 
 task_b = %{
     id: :b,
-    data: {:value, 2},
-    callback: fn %{data: {:value, v}}, _ ->
-        v
-    end
+    data: %{value: 2},
+    callback: handler_module
 }
 ```
 
 ```elixir
+defmodule MathHandler do
+    @behaviour ExDag.DAG.Handlers.TaskHandler
 
-    alias ExDag.DAG.Server
-    alias ExDag.DAG
-    alias ExDag.DAG.DAGTask
-    alias ExDag.DAG.DAGTaskRun
 
-callback = fn task, payload ->
-    wait = Enum.random(1000..2000)
-    Process.sleep(wait)
+    @impl true
+    def run_task(task, payload) do
+        wait = Enum.random(5_000..20_000)
+        Process.sleep(wait)
 
-    if rem(wait, 5) == 0 do
-        # simulate failed task
-        Process.exit(self(), :kill)
-    else
-        case task.data do
-        {:value, v} ->
-            {:ok, v}
+        if rem(wait, 5) == 0 do
+            Process.exit(self(), :kill)
+        else
+            case task.data do
+                %{value: v} ->
+                {:ok, v}
 
-        {:op, :+} ->
-            {:ok, Enum.reduce(payload, 0, fn {_k, v}, acc -> acc + v end)}
+                %{op: :+} ->
+                {:ok, Enum.reduce(payload, 0, fn {_k, v}, acc -> acc + v end)}
 
-        _ ->
-            :ok
+                _ ->
+                IO.puts("Unhandled")
+            end
         end
     end
+
+    @impl true
+    def on_success(_arg0, _arg1) do
+    end
+end
+
+defmodule MathDAG do
+
+    alias ExDag.DAG
+    alias ExDag.DAG.Server
+    alias ExDag.DAG.DAGTask
+    alias ExDag.DAG.DAGTaskRun
+    alias ExDag.DAG.Utils
+
+    @behaviour ExDag.DAG.Handlers.DAGHandler
+
+    require Logger
+
+    def on_dag_completed(dag_run) do
+        Utils.print_status(dag_run.dag)
+        Utils.print_task_runs(dag_run.dag.task_runs)
     end
 
-    start_date = DateTime.utc_now() |> DateTime.add(5, :second)
-
-    dag =
-    DAG.new("my dag")
-    |> DAG.add_task!(id: :a, callback: callback, data: {:op, :+})
-    |> DAG.add_task!(id: :b, callback: callback, data: {:value, 2})
-    |> DAG.add_task!(id: :c, callback: callback, data: {:op, :+})
-    |> DAG.add_task!(id: :d, callback: callback, data: {:op, :+})
-    |> DAG.add_task!(id: :e, callback: callback, data: {:op, :+})
-    |> DAG.add_task!(id: :f, callback: callback, data: {:value, 6})
-    |> DAG.add_task!(id: :g, callback: callback, data: {:value, 5}, start_date: start_date)
-    |> DAG.add_task!(id: :h, callback: callback, data: {:value, 4})
-    |> DAG.add_task!(id: :i, callback: callback, data: {:value, 3})
-    |> DAG.add_dependency(:a, :b)
-    |> DAG.add_dependency(:a, :c)
-    |> DAG.add_dependency(:c, :d)
-    |> DAG.add_dependency(:c, :e)
-    |> DAG.add_dependency(:d, :f)
-    |> DAG.add_dependency(:d, :g)
-    |> DAG.add_dependency(:e, :h)
-    |> DAG.add_dependency(:e, :i)
-
-
-    ExDag.DAG.Utils.start_dag_registry()
-    {:ok, pid} = Server.run_dag(dag)
-
-    ref = Process.monitor(pid)
-
-    receive do
-    {:DOWN, ^ref, _, _, _} ->
-        IO.puts "Process #{inspect(pid)} is down"
+    def on_task_completed(_dag_run, task, result) do
+        IO.puts("Completed task: #{inspect(task.id)} Result: #{inspect(result)}")
     end
 
+    def build_dag() do
+        start_date = DateTime.utc_now() |> DateTime.add(5, :second)
+        handler = MathHandler
+        dag_id = "math"
+        dag =
+        DAG.new(dag_id)
+        |> DAG.set_default_task_handler(handler)
+        |> DAG.set_handler(__MODULE__)
+        |> DAG.add_task!(id: "a", data: %{op: :+})
+        |> DAG.add_task!(id: "b", data: %{value: 2}, parent: "a")
+        |> DAG.add_task!(id: "c", data: %{op: :+}, parent: "a")
+        |> DAG.add_task!(id: "d", data: %{op: :+}, parent: "c")
+        |> DAG.add_task!(id: "e", data: %{op: :+}, parent: "c")
+        |> DAG.add_task!(id: "f", data: %{value: 6}, parent: "d")
+        |> DAG.add_task!(id: "g", data: %{value: 5}, start_date: start_date, parent: "d")
+        |> DAG.add_task!(id: "h", data: %{value: 4}, parent: "e")
+        |> DAG.add_task!(id: "i", data: %{value: 3}, parent: "e")
+        dag
+    end
 
-
+    def start() do
+        dag = build_dag()
+        {:ok, pid} = Server.run_dag(dag)
+        
+        ref = Process.monitor(pid)
+        receive do
+            {:DOWN, ^ref, _, _, _} ->
+                IO.puts "Completed DAG run #{inspect(pid)} is down"
+        end
+    end
+end
 ```
-
-

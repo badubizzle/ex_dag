@@ -4,6 +4,11 @@ defmodule ExDag.DAG do
   """
 
   alias ExDag.DAG.DAGTask
+  alias ExDag.DAG.DAGTaskRun
+  require Logger
+
+  @derive {Inspect, only: [:dag_id, :status]}
+  @derive {Jason.Encoder, only: [:dag_id, :status]}
 
   @status_init :init
 
@@ -24,6 +29,7 @@ defmodule ExDag.DAG do
   @status_running :running
   @status_done :done
   @status_init :init
+  @root :__root
 
   @type t :: %__MODULE__{
           dag_id: String.t(),
@@ -41,12 +47,20 @@ defmodule ExDag.DAG do
   @doc """
   Create a new DAG dag struct
   """
-  def new(dag_id) do
+  def new(dag_id) when is_binary(dag_id) and byte_size(dag_id) > 0 do
     new(dag_id, nil, nil)
   end
 
-  def new(dag_id, handler, task_handler) when is_binary(dag_id) and is_atom(handler) do
+  def new(_dag_id) do
+    {:error, :invalid_dag_id}
+  end
+
+  def new(dag_id, handler, task_handler)
+      when is_binary(dag_id) and byte_size(dag_id) > 0 and is_atom(handler) do
     g = Graph.new(type: :directed)
+    # |> Graph.add_vertex(@root)
+
+    # root_task = DAGTask.new(id: @root, handler: :none)
     running = %{}
     failed = %{}
     completed = %{}
@@ -69,6 +83,11 @@ defmodule ExDag.DAG do
     )
   end
 
+  def get_tasks(%__MODULE__{} = dag) do
+    Map.keys(dag.tasks) -- [@root]
+  end
+
+  @spec set_handler(ExDag.DAG.t(), atom) :: ExDag.DAG.t()
   def set_handler(%__MODULE__{} = dag, handler) when is_atom(handler) do
     %__MODULE__{dag | handler: handler}
   end
@@ -91,21 +110,25 @@ defmodule ExDag.DAG do
   Returns true or false if DAG  has valid DAG structure
   """
   def validate_for_run(%__MODULE__{g: g}) do
-    Enum.count(Graph.vertices(g)) <= 1 or Graph.is_tree?(g)
+    Graph.is_tree?(g)
   end
 
   def validate_for_run(_dag) do
     false
   end
 
+  @spec get_task(ExDag.DAG.t(), any) :: any
   def get_task(%__MODULE__{} = dag, task_id) do
     Map.get(dag.tasks, task_id)
   end
 
+  @spec add_task(ExDag.DAG.t(), keyword | ExDag.DAG.DAGTask.t()) ::
+          {:error, :invalid_task | :no_parent_task | :task_exists} | {:ok, ExDag.DAG.t()}
   def add_task(dag, task_or_opts) do
     do_add_task(dag, task_or_opts)
   end
 
+  @spec add_task!(ExDag.DAG.t(), keyword | ExDag.DAG.DAGTask.t()) :: ExDag.DAG.t()
   def add_task!(dag, task_or_opts) do
     case do_add_task(dag, task_or_opts) do
       {:ok, %__MODULE__{} = new_dag} ->
@@ -116,6 +139,7 @@ defmodule ExDag.DAG do
     end
   end
 
+  @spec add_task!(ExDag.DAG.t(), ExDag.DAG.DAGTask.t(), any) :: ExDag.DAG.t()
   def add_task!(dag, task_or_opts, parent_task_id) do
     case add_task(dag, task_or_opts, parent_task_id) do
       {:ok, %__MODULE__{} = new_dag} ->
@@ -126,6 +150,8 @@ defmodule ExDag.DAG do
     end
   end
 
+  @spec add_task(ExDag.DAG.t(), ExDag.DAG.DAGTask.t(), any) ::
+          {:error, :invalid_task | :no_parent_task | :task_exists} | {:ok, ExDag.DAG.t()}
   def add_task(
         %__MODULE__{status: @status_init, task_handler: default_handler} = dag,
         %DAGTask{handler: handler} = task,
@@ -162,24 +188,37 @@ defmodule ExDag.DAG do
 
     if is_nil(parent) do
       task = DAGTask.new(opts)
-      do_add_task(dag, task)
+
+      if DAGTask.validate(task) do
+        do_add_task(dag, task)
+      else
+        {:error, :invalid_dag_task}
+      end
     else
       opts = Keyword.delete(opts, :parent)
       task = DAGTask.new(opts)
-      add_task(dag, task, parent)
+
+      if DAGTask.validate(task) do
+        add_task(dag, task, parent)
+      else
+        {:error, :invalid_dag_task}
+      end
     end
   end
 
   defp do_add_task(
          %__MODULE__{task_handler: default_handler} = dag,
          %DAGTask{handler: handler} = task
-       ) do
+       )
+       when is_atom(default_handler) or is_atom(handler) do
     task =
       if is_nil(handler) do
         %DAGTask{task | handler: default_handler}
       else
         task
       end
+
+    Logger.info("Adding new task: #{inspect(Map.from_struct(task))}")
 
     case DAGTask.validate(task) do
       true ->
@@ -203,7 +242,7 @@ defmodule ExDag.DAG do
       true ->
         case do_add_task(dag, task) do
           {:ok, dag} ->
-            {:ok, add_dependency(dag, parent_task.id, task.id)}
+            add_dependency(dag, parent_task.id, task.id)
 
           error ->
             error
@@ -214,13 +253,13 @@ defmodule ExDag.DAG do
     end
   end
 
-  def add_dependency(%__MODULE__{status: @status_init} = dag, %DAGTask{id: task1_id}, %DAGTask{
-        id: task2_id
-      }) do
+  defp add_dependency(%__MODULE__{status: @status_init} = dag, %DAGTask{id: task1_id}, %DAGTask{
+         id: task2_id
+       }) do
     add_dependency(dag, task1_id, task2_id)
   end
 
-  def add_dependency(%__MODULE__{status: @status_init} = dag, task1_id, task2_id) do
+  defp add_dependency(%__MODULE__{status: @status_init} = dag, task1_id, task2_id) do
     # add edge and update label with deps
     if Map.has_key?(dag.tasks, task1_id) and Map.has_key?(dag.tasks, task2_id) do
       edge = Graph.Edge.new(task1_id, task2_id)
@@ -231,16 +270,29 @@ defmodule ExDag.DAG do
         |> Graph.label_vertex(task1_id, {:deps, task2_id})
 
       dag = update_graph(dag, updated_g)
-      %__MODULE__{dag | task_deps: build_task_deps(dag)}
+      {:ok, %__MODULE__{dag | task_deps: build_task_deps(dag)}}
     else
       {:error, :invalid_task}
     end
   end
 
+  @doc """
+  Returns a list of tasks that the given task depends on
+  """
+  @spec get_deps(ExDag.DAG.t(), task_id :: any) :: list()
   def get_deps(%__MODULE__{} = dag, task_id) do
     Map.get(dag.task_deps, task_id, [])
   end
 
+  @spec get_deps_map(ExDag.DAG.t()) :: map()
+  def get_deps_map(%__MODULE__{} = dag) do
+    dag.task_deps
+  end
+
+  @doc """
+  Returns all the runs for a DAG task
+  """
+  @spec get_runs(ExDag.DAG.t(), task_id :: any) :: list()
   def get_runs(%__MODULE__{} = dag, task_id) do
     dag.task_runs
     |> Map.get(task_id, [])
@@ -274,15 +326,124 @@ defmodule ExDag.DAG do
     @status_init
   end
 
-  defimpl String.Chars, for: __MODULE__ do
-    def to_string(dag) do
-      "#DAG{tasks: #{inspect(dag.tasks)}}"
+  @doc """
+  Returns True if the last task (or tasks) in the DAG is completed
+  """
+  @spec completed?(ExDag.DAG.t()) :: boolean
+  def completed?(%__MODULE__{} = dag) do
+    tasks = get_last_tasks(dag)
+
+    Enum.all?(tasks, fn
+      {_task_id, %DAGTask{} = task} ->
+        DAGTask.is_completed(task)
+
+      task_id ->
+        DAGTask.is_completed(get_task(dag, task_id))
+    end)
+  end
+
+  @spec get_last_tasks(ExDag.DAG.t()) :: list
+  def get_last_tasks(%__MODULE__{} = dag) do
+    for v <- Graph.vertices(dag.g), Graph.in_degree(dag.g, v) == 0 do
+      v
     end
   end
 
-  defimpl Inspect, for: __MODULE__ do
-    def inspect(dag, _opts) do
-      to_string(dag)
+  def sorted_tasks(%__MODULE__{tasks: tasks} = dag) do
+    task_ids = Map.keys(tasks)
+    # Deps: %{a: [:b, :c], c: [:d, :e], d: [:f, :g], e: [:h, :i]}
+    # Sorted Ids: [:a, :c, :e, :i, :h, :d, :g, :f, :b]
+
+    # Deps: %{a: [:b, :c], c: [:d, :e], d: [:f, :g], e: [:h, :i]}
+    # Sorted Ids: [:a, :b, :c, :d, :f, :g, :e, :h, :i]
+
+    g =
+      Graph.new(type: :directed)
+      |> Graph.add_vertices(task_ids)
+
+    edges =
+      Enum.map(dag.task_deps, fn {task_id, deps} ->
+        Enum.map(deps, fn dep -> {task_id, dep} end)
+      end)
+      |> List.flatten()
+
+    g = Graph.add_edges(g, edges)
+    sorted_ids = Graph.postorder(g)
+
+    sorted_ids
+    |> Enum.reverse()
+    |> Enum.map(fn task_id ->
+      {task_id, Map.from_struct(get_task(dag, task_id))}
+    end)
+    |> Map.new()
+  end
+
+  def get_completed_tasks(%__MODULE__{} = dag) do
+    Enum.filter(dag.tasks, fn task ->
+      DAGTask.is_completed(task)
+    end)
+  end
+
+  def get_pending_tasks(%__MODULE__{} = dag) do
+    Enum.filter(dag.tasks, fn task ->
+      DAGTask.is_pending(task)
+    end)
+  end
+
+  def get_running_tasks(%__MODULE__{} = dag) do
+    Enum.filter(dag.tasks, fn task ->
+      DAGTask.is_running(task)
+    end)
+  end
+
+  @doc """
+  Clear failed taks. This is necessary for resuming DAGs
+  """
+  @spec clear_failed_tasks_runs(ExDag.DAG.t()) :: ExDag.DAG.t()
+  def clear_failed_tasks_runs(%__MODULE__{tasks: tasks} = dag) do
+    failed_ids =
+      tasks
+      |> Map.keys()
+      |> Enum.filter(fn t_id ->
+        !should_run_task(dag, t_id)
+      end)
+
+    Logger.info("Failed tasks: #{inspect(failed_ids)}")
+
+    tasks =
+      Enum.reduce(tasks, tasks, fn {task_id, task}, t ->
+        if Enum.member?(failed_ids, task_id) do
+          Map.put(t, task_id, %DAGTask{task | last_run: nil})
+        else
+          t
+        end
+      end)
+
+    %__MODULE__{dag | tasks: tasks}
+  end
+
+  def should_run_task(%__MODULE__{} = dag, task_id) do
+    %DAGTask{last_run: last_run} = task = Map.get(dag.tasks, task_id)
+
+    failed = DAGTask.status_failed()
+
+    case last_run do
+      %DAGTaskRun{status: ^failed} ->
+        if task.stop_on_failure do
+          false
+        else
+          task_runs = Map.get(dag.task_runs, task_id)
+          task.retries && Enum.count(task_runs) < task.retries
+        end
+
+      _ ->
+        true
+    end
+  end
+
+  defimpl String.Chars, for: __MODULE__ do
+    def to_string(dag) do
+      "#DAG{tasks: #{inspect(dag.tasks)}}"
     end
   end
 end

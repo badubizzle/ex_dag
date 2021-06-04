@@ -1,9 +1,99 @@
+defmodule MathHandler do
+  @moduledoc false
+  @behaviour ExDag.DAG.Handlers.TaskHandler
+
+  @impl true
+  def run_task(task, payload) do
+    wait = Enum.random(5_000..20_000)
+    Process.sleep(wait)
+
+    if rem(wait, 5) == 0 do
+      Process.exit(self(), :kill)
+    else
+      case task.data do
+        %{value: v} ->
+          {:ok, v}
+
+        %{op: :+} ->
+          {:ok, Enum.reduce(payload, 0, fn {_k, v}, acc -> acc + v end)}
+
+        _ ->
+          IO.puts("Unhandled")
+      end
+    end
+  end
+
+  @impl true
+  def on_success(_arg0, _arg1) do
+  end
+end
+
+defmodule MathDAG do
+  @moduledoc false
+  alias ExDag.DAG
+  alias ExDag.DAG.Server
+  alias ExDag.DAG.DAGTask
+  alias ExDag.DAG.DAGTaskRun
+  alias ExDag.DAG.Utils
+
+  @behaviour ExDag.DAG.Handlers.DAGHandler
+
+  require Logger
+
+  def on_dag_completed(dag_run) do
+    Utils.print_status(dag_run.dag)
+    Utils.print_task_runs(dag_run.dag.task_runs)
+  end
+
+  def on_task_completed(_dag_run, task, result) do
+    IO.puts("Completed task: #{inspect(task.id)} Result: #{inspect(result)}")
+  end
+
+  def on_task_started(_dag_run, task_run) do
+    Logger.info("Started task #{task_run.task.id}")
+  end
+
+  def build_dag() do
+    start_date = DateTime.utc_now() |> DateTime.add(5, :second)
+    handler = MathHandler
+    dag_id = "math"
+
+    dag =
+      DAG.new(dag_id)
+      |> DAG.set_default_task_handler(handler)
+      |> DAG.set_handler(__MODULE__)
+      |> DAG.add_task!(id: "a", data: %{op: :+})
+      |> DAG.add_task!(id: "b", data: %{value: 2}, parent: "a")
+      |> DAG.add_task!(id: "c", data: %{op: :+}, parent: "a")
+      |> DAG.add_task!(id: "d", data: %{op: :+}, parent: "c")
+      |> DAG.add_task!(id: "e", data: %{op: :+}, parent: "c")
+      |> DAG.add_task!(id: "f", data: %{value: 6}, parent: "d")
+      |> DAG.add_task!(id: "g", data: %{value: 5}, start_date: start_date, parent: "d")
+      |> DAG.add_task!(id: "h", data: %{value: 4}, parent: "e")
+      |> DAG.add_task!(id: "i", data: %{value: 3}, parent: "e")
+
+    dag
+  end
+
+  def start() do
+    dag = build_dag()
+    {:ok, pid} = Server.run_dag(dag)
+
+    ref = Process.monitor(pid)
+
+    receive do
+      {:DOWN, ^ref, _, _, _} ->
+        IO.puts("Completed DAG run #{inspect(pid)} is down")
+    end
+  end
+end
+
 defmodule ExDag.DAG.Utils do
   @moduledoc """
   Utility module for running and test DAGs
   """
-  alias ExDag.DAG.Server
   alias ExDag.DAG
+  alias ExDag.DAG.Server
   alias ExDag.DAG.DAGTask
   alias ExDag.DAG.DAGTaskRun
 
@@ -153,15 +243,16 @@ defmodule ExDag.DAG.Utils do
     dag =
       DAG.new(dag_id)
       |> DAG.set_default_task_handler(handler)
-      |> DAG.add_task!(id: :a, data: {:op, :+})
-      |> DAG.add_task!(id: :b, data: {:value, 2}, parent: :a)
-      |> DAG.add_task!(id: :c, data: {:op, :+}, parent: :a)
-      |> DAG.add_task!(id: :d, data: {:op, :+}, parent: :c)
-      |> DAG.add_task!(id: :e, data: {:op, :+}, parent: :c)
-      |> DAG.add_task!(id: :f, data: {:value, 6}, parent: :d)
-      |> DAG.add_task!(id: :g, data: {:value, 5}, start_date: start_date, parent: :d)
-      |> DAG.add_task!(id: :h, data: {:value, 4}, parent: :e)
-      |> DAG.add_task!(id: :i, data: {:value, 3}, parent: :e)
+      |> DAG.set_handler(__MODULE__)
+      |> DAG.add_task!(id: "a", data: %{op: :+})
+      |> DAG.add_task!(id: "b", data: %{value: 2}, parent: "a")
+      |> DAG.add_task!(id: "c", data: %{op: :+}, parent: "a")
+      |> DAG.add_task!(id: "d", data: %{op: :+}, parent: "c")
+      |> DAG.add_task!(id: "e", data: %{op: :+}, parent: "c")
+      |> DAG.add_task!(id: "f", data: %{value: 6}, parent: "d")
+      |> DAG.add_task!(id: "g", data: %{value: 5}, start_date: start_date, parent: "d")
+      |> DAG.add_task!(id: "h", data: %{value: 4}, parent: "e")
+      |> DAG.add_task!(id: "i", data: %{value: 3}, parent: "e")
 
     dag
   end
