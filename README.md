@@ -53,7 +53,7 @@ We can run a task under 2 conditions
 Given this,
 We can start running tasks *f, g, h, i, b* since they have no dependencies.
 
-Taking advantage of Elixir processes we can run these tasks in concurrently
+Taking advantage of Elixir processes we can run these tasks concurrently
 
 Once those tasks are completed we pick the next available tasks and run them.
 
