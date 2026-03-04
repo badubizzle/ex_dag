@@ -28,7 +28,6 @@ defmodule ExDag.DAG do
 
   @status_running :running
   @status_done :done
-  @status_init :init
   @root :__root
 
   @type t :: %__MODULE__{
@@ -269,7 +268,7 @@ defmodule ExDag.DAG do
         |> Graph.add_edge(edge)
         |> Graph.label_vertex(task1_id, {:deps, task2_id})
 
-      dag = update_graph(dag, updated_g)
+      %__MODULE__{} = dag = update_graph(dag, updated_g)
       {:ok, %__MODULE__{dag | task_deps: build_task_deps(dag)}}
     else
       {:error, :invalid_task}
@@ -298,7 +297,7 @@ defmodule ExDag.DAG do
     |> Map.get(task_id, [])
   end
 
-  defp update_graph(dag, g) do
+  defp update_graph(%__MODULE__{} = dag, g) do
     %__MODULE__{dag | g: g}
   end
 
@@ -411,7 +410,7 @@ defmodule ExDag.DAG do
     Logger.info("Failed tasks: #{inspect(failed_ids)}")
 
     tasks =
-      Enum.reduce(tasks, tasks, fn {task_id, task}, t ->
+      Enum.reduce(tasks, tasks, fn {task_id, %DAGTask{} = task}, t ->
         if Enum.member?(failed_ids, task_id) do
           Map.put(t, task_id, %DAGTask{task | last_run: nil})
         else

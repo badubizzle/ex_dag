@@ -2,9 +2,9 @@ defmodule ExDag.DAG.DAGTask do
   @moduledoc """
   A DAG Task
   """
-  @derive {Jason.Encoder, except: [:__struct__, :last_run, :handler]}
+  @derive {Jason.Encoder, except: [:last_run, :handler]}
 
-  @derive {Inspect, except: [:__struct__, :last_run, :handler]}
+  @derive {Inspect, except: [:last_run, :handler]}
 
   @enforce_keys [:id]
   defstruct id: nil,
