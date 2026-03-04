@@ -379,19 +379,19 @@ defmodule ExDag.DAG do
   end
 
   def get_completed_tasks(%__MODULE__{} = dag) do
-    Enum.filter(dag.tasks, fn task ->
+    Enum.filter(dag.tasks, fn {_task_id, task} ->
       DAGTask.is_completed(task)
     end)
   end
 
   def get_pending_tasks(%__MODULE__{} = dag) do
-    Enum.filter(dag.tasks, fn task ->
+    Enum.filter(dag.tasks, fn {_task_id, task} ->
       DAGTask.is_pending(task)
     end)
   end
 
   def get_running_tasks(%__MODULE__{} = dag) do
-    Enum.filter(dag.tasks, fn task ->
+    Enum.filter(dag.tasks, fn {_task_id, task} ->
       DAGTask.is_running(task)
     end)
   end
