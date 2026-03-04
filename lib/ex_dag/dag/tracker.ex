@@ -22,7 +22,7 @@ defmodule ExDag.Tracker do
 
   def handle_call({:broadcast, topic, message}, _from, state) do
     Phoenix.PubSub.broadcast!(state.pubsub_server, topic, message)
-    {:noreply, state}
+    {:reply, :ok, state}
   end
 
   def handle_diff(diff, state) do

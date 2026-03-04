@@ -28,7 +28,6 @@ defmodule ExDag.DAG do
 
   @status_running :running
   @status_done :done
-  @status_init :init
   @root :__root
 
   @type t :: %__MODULE__{

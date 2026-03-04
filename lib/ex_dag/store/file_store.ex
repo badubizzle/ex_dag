@@ -74,7 +74,7 @@ defmodule ExDag.Store.FileStore do
         try do
           :erlang.binary_to_term(content)
         rescue
-          e ->
+          _ ->
             {:error, "Could not load dag"}
         end
 
