@@ -15,8 +15,6 @@ defmodule ExDag.DAG.Server do
   @server __MODULE__
   @run_interval 5000
 
-  @registry DAGRegister
-
   # client api
 
   def run_dag(%DAG{} = dag) do
@@ -99,9 +97,8 @@ defmodule ExDag.DAG.Server do
   end
 
   @impl true
-  def handle_continue(:start, %DAGRun{dag: %{status: status}} = dag_run) do
+  def handle_continue(:start, %DAGRun{dag: %DAG{status: status} = dag} = dag_run) do
     Logger.debug("Starting DAG run")
-    dag = dag_run.dag
 
     if status == DAG.status_init() or status == DAG.status_running() do
       case DAG.validate_for_run(dag) do
@@ -165,7 +162,7 @@ defmodule ExDag.DAG.Server do
     final_state
   end
 
-  def handle_info({:start_next, pid}, %DAGRun{dag: dag} = dag_run) do
+  def handle_info({:start_next, pid}, %DAGRun{dag: %DAG{} = dag} = dag_run) do
     case pid == self() do
       true ->
         %{failed: failed, ready: ready, pending: pending, completed: completed} =
@@ -342,7 +339,7 @@ defmodule ExDag.DAG.Server do
     task_runs = Map.get(dag.task_runs, task_id, [])
     task_runs = Map.put(dag.task_runs, task_id, [task_run | task_runs])
 
-    task = Map.get(dag.tasks, task_id)
+    %DAGTask{} = task = Map.get(dag.tasks, task_id)
 
     tasks = Map.put(dag.tasks, task_id, %DAGTask{task | status: status, last_run: task_run})
     running = Map.delete(dag.running, pid)
@@ -357,11 +354,11 @@ defmodule ExDag.DAG.Server do
     {task, %DAG{dag | g: g, task_runs: task_runs, running: running, tasks: tasks}}
   end
 
-  defp start_workers([], %DAGRun{dag: dag} = dag_run) do
+  defp start_workers([], %DAGRun{dag: %DAG{} = dag} = dag_run) do
     {:noreply, %DAGRun{dag_run | dag: %DAG{dag | timer: nil}}}
   end
 
-  defp start_workers([t | rest], %DAGRun{dag: dag} = dag_run) do
+  defp start_workers([t | rest], %DAGRun{dag: %DAG{} = dag} = dag_run) do
     deps = Map.get(dag.task_deps, t, [])
     %DAGTask{} = task = Map.get(dag.tasks, t)
 
@@ -385,7 +382,7 @@ defmodule ExDag.DAG.Server do
       task_run = DAGTaskRun.new(task, Map.new(completed_deps), self())
       {:ok, pid} = Worker.run_task(task_run)
       running_tasks = Map.put(dag.running, pid, task_run)
-      task = Map.get(dag.tasks, t)
+      %DAGTask{} = task = Map.get(dag.tasks, t)
 
       tasks =
         Map.put(dag.tasks, t, %DAGTask{
